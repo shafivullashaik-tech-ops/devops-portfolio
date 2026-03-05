@@ -1,0 +1,74 @@
+# Terraform
+**/.terraform/
+**/.terraform.lock.hcl
+**/terraform.tfstate
+**/terraform.tfstate.backup
+**/.terraform.tfstate.lock.info
+**/crash.log
+**/override.tf
+**/override.tf.json
+**/*_override.tf
+**/*_override.tf.json
+
+# Sensitive files - NEVER commit these!
+**/*.pem
+**/*.key
+**/*.p12
+**/.env
+**/.env.*
+**/secrets.yaml
+**/secrets.yml
+**/credentials
+**/kubeconfig
+**/.aws/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Python
+__pycache__/
+*.py[cod]
+.Python
+*.egg-info/
+venv/
+.venv/
+ENV/
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-error.log*
+yarn.lock
+package-lock.json
+dist/
+build/
+
+# Logs
+*.log
+logs/
+
+# Backup files
+*.bak
+*.tmp
+*~
+
+# Output files
+output/
+*.out
+artifacts/
+reports/
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# Docker
+.dockerignore
