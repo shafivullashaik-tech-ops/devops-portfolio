@@ -1,0 +1,24 @@
+# Production Environment Kustomization
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: production
+
+resources:
+  - ../../apps/demo-app.yaml
+
+# Common labels for all resources
+commonLabels:
+  environment: prod
+  managed-by: argocd
+
+# Patches for prod-specific configurations
+patches:
+  - patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 5
+    target:
+      kind: Deployment
+      name: demo-app
