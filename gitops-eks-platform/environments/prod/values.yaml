@@ -14,19 +14,26 @@ service:
 
 ingress:
   enabled: true
-  className: nginx
+  className: alb
   annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-prod
-    nginx.ingress.kubernetes.io/rate-limit: "100"
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: '443'
+    alb.ingress.kubernetes.io/healthcheck-path: /health
+    alb.ingress.kubernetes.io/healthcheck-protocol: HTTPS
+    # Production certificate
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-east-1:ACCOUNT_ID:certificate/CERT_ID
+    # WAF protection for production
+    # alb.ingress.kubernetes.io/wafv2-acl-arn: arn:aws:wafv2:us-east-1:ACCOUNT_ID:regional/webacl/NAME/ID
+    # Additional ALB attributes
+    alb.ingress.kubernetes.io/load-balancer-attributes: deletion_protection.enabled=true,idle_timeout.timeout_seconds=60
   hosts:
     - host: demo-app.example.com
       paths:
         - path: /
           pathType: Prefix
-  tls:
-    - secretName: demo-app-prod-tls
-      hosts:
-        - demo-app.example.com
+  tls: []
 
 resources:
   limits:

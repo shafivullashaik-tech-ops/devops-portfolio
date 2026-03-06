@@ -1,0 +1,73 @@
+# AWS Load Balancer Controller Helm Values
+# Chart: https://github.com/aws/eks-charts/tree/master/stable/aws-load-balancer-controller
+
+# Replace ACCOUNT_ID and CLUSTER_NAME with actual values
+replicaCount: 2
+
+clusterName: CLUSTER_NAME  # Replace with your cluster name
+
+serviceAccount:
+  create: true
+  name: aws-load-balancer-controller
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT_ID:role/CLUSTER_NAME-aws-load-balancer-controller
+
+# Resource limits
+resources:
+  limits:
+    cpu: 200m
+    memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 256Mi
+
+# Pod disruption budget
+podDisruptionBudget:
+  maxUnavailable: 1
+
+# Enable WAF and Shield
+enableWaf: true
+enableWafv2: true
+enableShield: false
+
+# Log level (info, debug, trace)
+logLevel: info
+
+# Security context
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 65534
+  fsGroup: 65534
+  seccompProfile:
+    type: RuntimeDefault
+
+# Container security context
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+# Affinity for high availability
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - aws-load-balancer-controller
+          topologyKey: topology.kubernetes.io/zone
+
+# Node selector
+nodeSelector: {}
+
+# Tolerations
+tolerations: []
+
+# Additional labels
+podLabels: {}
