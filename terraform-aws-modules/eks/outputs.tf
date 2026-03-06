@@ -65,3 +65,13 @@ output "kubeconfig_command" {
   description = "Command to update kubeconfig"
   value       = "aws eks update-kubeconfig --name ${aws_eks_cluster.main.name} --region ${data.aws_partition.current.partition}"
 }
+
+output "aws_load_balancer_controller_role_arn" {
+  description = "ARN of the IAM role for AWS Load Balancer Controller"
+  value       = var.enable_aws_load_balancer_controller ? aws_iam_role.aws_load_balancer_controller[0].arn : ""
+}
+
+output "aws_load_balancer_controller_policy_arn" {
+  description = "ARN of the IAM policy for AWS Load Balancer Controller"
+  value       = var.enable_aws_load_balancer_controller ? aws_iam_policy.aws_load_balancer_controller[0].arn : ""
+}
