@@ -14,18 +14,21 @@ service:
 
 ingress:
   enabled: true
-  className: nginx
+  className: alb
   annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-staging
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: '443'
+    alb.ingress.kubernetes.io/healthcheck-path: /health
+    # Add certificate ARN for HTTPS
+    # alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-east-1:ACCOUNT_ID:certificate/CERT_ID
   hosts:
     - host: demo-app-dev.example.com
       paths:
         - path: /
           pathType: Prefix
-  tls:
-    - secretName: demo-app-dev-tls
-      hosts:
-        - demo-app-dev.example.com
+  tls: []
 
 resources:
   limits:
