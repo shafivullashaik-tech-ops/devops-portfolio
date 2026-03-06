@@ -1,0 +1,24 @@
+# Development Environment Kustomization
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: default
+
+resources:
+  - ../../apps/demo-app.yaml
+
+# Common labels for all resources
+commonLabels:
+  environment: dev
+  managed-by: argocd
+
+# Patches for dev-specific configurations
+patches:
+  - patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 2
+    target:
+      kind: Deployment
+      name: demo-app
