@@ -291,26 +291,4 @@ pipeline {
     }
 }
 
-/*
- * Interview Talking Points for this Jenkinsfile:
- *
- * 1. DECLARATIVE PIPELINE: Using declarative syntax for better readability and structure
- *
- * 2. NO HARDCODED CREDENTIALS: Using IRSA (IAM Roles for Service Accounts) for AWS auth
- *
- * 3. PARALLEL EXECUTION: Tests and scans run in parallel to save time
- *
- * 4. SECURITY SCANNING: Trivy for vulnerability scanning, Hadolint for Dockerfile linting
- *
- * 5. GITOPS WORKFLOW: Jenkins doesn't deploy - it updates GitOps repo, ArgoCD handles deployment
- *
- * 6. IMAGE VERSIONING: Using git commit SHA + build number for traceability
- *
- * 7. BRANCH-BASED DEPLOYMENT: Different environments based on git branch
- *
- * 8. BUILD METADATA: OCI image labels for traceability (BUILD_DATE, VCS_REF, VERSION)
- *
- * 9. CLEANUP: Proper cleanup of Docker images and workspace
- *
- * 10. NOTIFICATIONS: Slack integration for team visibility
- */
+
