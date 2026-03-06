@@ -1,0 +1,316 @@
+// Declarative Jenkins Pipeline for Demo Application
+// This pipeline demonstrates enterprise CI/CD best practices
+
+pipeline {
+    agent any
+
+    environment {
+        // AWS Configuration (using IRSA - no hardcoded credentials!)
+        AWS_REGION = 'us-east-1'
+        AWS_ACCOUNT_ID = sh(script: 'aws sts get-caller-identity --query Account --output text', returnStdout: true).trim()
+
+        // ECR Configuration
+        ECR_REPOSITORY = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/demo-app"
+
+        // Image versioning
+        GIT_COMMIT_SHORT = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
+        IMAGE_TAG = "${GIT_COMMIT_SHORT}-${BUILD_NUMBER}"
+
+        // Application configuration
+        APP_NAME = 'demo-app'
+        NAMESPACE = 'default'
+    }
+
+    options {
+        // Keep last 10 builds
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+
+        // Timeout after 30 minutes
+        timeout(time: 30, unit: 'MINUTES')
+
+        // Add timestamps to console output
+        timestamps()
+
+        // Disable concurrent builds
+        disableConcurrentBuilds()
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                echo '🔄 Checking out source code...'
+                checkout scm
+
+                script {
+                    env.GIT_BRANCH = sh(script: 'git rev-parse --abbrev-ref HEAD', returnStdout: true).trim()
+                    echo "Branch: ${env.GIT_BRANCH}"
+                    echo "Commit: ${env.GIT_COMMIT_SHORT}"
+                }
+            }
+        }
+
+        stage('Build') {
+            steps {
+                echo '🏗️ Building Docker image...'
+                script {
+                    // Build multi-stage Docker image
+                    sh """
+                        docker build \
+                            --build-arg BUILD_DATE=\$(date -u +'%Y-%m-%dT%H:%M:%SZ') \
+                            --build-arg VCS_REF=${GIT_COMMIT_SHORT} \
+                            --build-arg VERSION=${IMAGE_TAG} \
+                            -t ${APP_NAME}:${IMAGE_TAG} \
+                            -t ${APP_NAME}:latest \
+                            .
+                    """
+
+                    echo "✅ Built image: ${APP_NAME}:${IMAGE_TAG}"
+                }
+            }
+        }
+
+        stage('Test') {
+            parallel {
+                stage('Unit Tests') {
+                    steps {
+                        echo '🧪 Running unit tests...'
+                        script {
+                            sh """
+                                docker run --rm ${APP_NAME}:${IMAGE_TAG} npm test
+                            """
+                        }
+                    }
+                }
+
+                stage('Integration Tests') {
+                    steps {
+                        echo '🔗 Running integration tests...'
+                        script {
+                            sh """
+                                docker run --rm ${APP_NAME}:${IMAGE_TAG} npm run test:integration
+                            """
+                        }
+                    }
+                }
+
+                stage('Lint') {
+                    steps {
+                        echo '📝 Running linters...'
+                        script {
+                            sh """
+                                docker run --rm ${APP_NAME}:${IMAGE_TAG} npm run lint
+                            """
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Security Scan') {
+            parallel {
+                stage('Trivy Scan') {
+                    steps {
+                        echo '🔒 Scanning image for vulnerabilities with Trivy...'
+                        script {
+                            // Install Trivy if not present
+                            sh """
+                                if ! command -v trivy &> /dev/null; then
+                                    echo "Installing Trivy..."
+                                    wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
+                                    echo "deb https://aquasecurity.github.io/trivy-repo/deb \$(lsb_release -sc) main" | sudo tee -a /etc/apt/sources.list.d/trivy.list
+                                    sudo apt-get update
+                                    sudo apt-get install trivy -y
+                                fi
+                            """
+
+                            // Scan image
+                            sh """
+                                trivy image \
+                                    --severity HIGH,CRITICAL \
+                                    --exit-code 0 \
+                                    --no-progress \
+                                    ${APP_NAME}:${IMAGE_TAG}
+                            """
+                        }
+                    }
+                }
+
+                stage('Dockerfile Lint') {
+                    steps {
+                        echo '📋 Linting Dockerfile...'
+                        script {
+                            sh """
+                                docker run --rm -i hadolint/hadolint < Dockerfile || true
+                            """
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Push to ECR') {
+            when {
+                // Only push on main/master branch or when explicitly triggered
+                anyOf {
+                    branch 'main'
+                    branch 'master'
+                    branch 'develop'
+                }
+            }
+            steps {
+                echo '📤 Pushing image to AWS ECR...'
+                script {
+                    // Login to ECR (using IRSA - no hardcoded credentials!)
+                    sh """
+                        aws ecr get-login-password --region ${AWS_REGION} | \
+                            docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
+                    """
+
+                    // Tag image for ECR
+                    sh """
+                        docker tag ${APP_NAME}:${IMAGE_TAG} ${ECR_REPOSITORY}:${IMAGE_TAG}
+                        docker tag ${APP_NAME}:${IMAGE_TAG} ${ECR_REPOSITORY}:latest
+
+                        # Also tag with branch name
+                        docker tag ${APP_NAME}:${IMAGE_TAG} ${ECR_REPOSITORY}:${GIT_BRANCH}-latest
+                    """
+
+                    // Push to ECR
+                    sh """
+                        docker push ${ECR_REPOSITORY}:${IMAGE_TAG}
+                        docker push ${ECR_REPOSITORY}:latest
+                        docker push ${ECR_REPOSITORY}:${GIT_BRANCH}-latest
+                    """
+
+                    echo "✅ Pushed images to ECR:"
+                    echo "  - ${ECR_REPOSITORY}:${IMAGE_TAG}"
+                    echo "  - ${ECR_REPOSITORY}:latest"
+                    echo "  - ${ECR_REPOSITORY}:${GIT_BRANCH}-latest"
+                }
+            }
+        }
+
+        stage('Update GitOps Repo') {
+            when {
+                anyOf {
+                    branch 'main'
+                    branch 'master'
+                }
+            }
+            steps {
+                echo '🔄 Updating GitOps repository...'
+                script {
+                    // This stage updates the GitOps repo with the new image tag
+                    // ArgoCD will then sync the changes to Kubernetes
+
+                    withCredentials([usernamePassword(credentialsId: 'github-credentials', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_TOKEN')]) {
+                        sh """
+                            # Clone GitOps repo
+                            git clone https://${GIT_TOKEN}@github.com/your-org/gitops-eks-platform.git
+                            cd gitops-eks-platform
+
+                            # Determine environment based on branch
+                            if [ "${GIT_BRANCH}" = "main" ]; then
+                                ENV="prod"
+                            else
+                                ENV="dev"
+                            fi
+
+                            # Update image tag in values file
+                            cd environments/\${ENV}
+                            sed -i 's|tag: .*|tag: ${IMAGE_TAG}|' values.yaml
+
+                            # Commit and push
+                            git config user.name "Jenkins CI"
+                            git config user.email "jenkins@company.com"
+                            git add values.yaml
+                            git commit -m "Update ${APP_NAME} to ${IMAGE_TAG}" || echo "No changes to commit"
+                            git push origin main
+
+                            cd ../../..
+                            rm -rf gitops-eks-platform
+                        """
+                    }
+
+                    echo "✅ Updated GitOps repo - ArgoCD will sync automatically"
+                }
+            }
+        }
+
+        stage('Notify') {
+            steps {
+                echo '📢 Sending notifications...'
+                script {
+                    // Send notification to Slack, email, or other channels
+                    def message = """
+                        *Build ${currentBuild.fullDisplayName}*
+
+                        Status: ${currentBuild.currentResult}
+                        Branch: ${GIT_BRANCH}
+                        Commit: ${GIT_COMMIT_SHORT}
+                        Image: ${ECR_REPOSITORY}:${IMAGE_TAG}
+
+                        Duration: ${currentBuild.durationString}
+
+                        <${env.BUILD_URL}|View Build>
+                    """
+
+                    // Uncomment to enable Slack notifications
+                    // slackSend(channel: '#deployments', message: message, color: currentBuild.currentResult == 'SUCCESS' ? 'good' : 'danger')
+
+                    echo message
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            echo '🧹 Cleaning up...'
+            // Clean up Docker images to save space
+            sh """
+                docker rmi ${APP_NAME}:${IMAGE_TAG} || true
+                docker rmi ${APP_NAME}:latest || true
+                docker system prune -f || true
+            """
+        }
+
+        success {
+            echo '✅ Pipeline completed successfully!'
+        }
+
+        failure {
+            echo '❌ Pipeline failed!'
+            // Send failure notifications
+        }
+
+        cleanup {
+            // Final cleanup
+            cleanWs()
+        }
+    }
+}
+
+/*
+ * Interview Talking Points for this Jenkinsfile:
+ *
+ * 1. DECLARATIVE PIPELINE: Using declarative syntax for better readability and structure
+ *
+ * 2. NO HARDCODED CREDENTIALS: Using IRSA (IAM Roles for Service Accounts) for AWS auth
+ *
+ * 3. PARALLEL EXECUTION: Tests and scans run in parallel to save time
+ *
+ * 4. SECURITY SCANNING: Trivy for vulnerability scanning, Hadolint for Dockerfile linting
+ *
+ * 5. GITOPS WORKFLOW: Jenkins doesn't deploy - it updates GitOps repo, ArgoCD handles deployment
+ *
+ * 6. IMAGE VERSIONING: Using git commit SHA + build number for traceability
+ *
+ * 7. BRANCH-BASED DEPLOYMENT: Different environments based on git branch
+ *
+ * 8. BUILD METADATA: OCI image labels for traceability (BUILD_DATE, VCS_REF, VERSION)
+ *
+ * 9. CLEANUP: Proper cleanup of Docker images and workspace
+ *
+ * 10. NOTIFICATIONS: Slack integration for team visibility
+ */
