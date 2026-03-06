@@ -72,3 +72,6 @@ coverage/
 
 # Docker
 .dockerignore
+
+# Interview preparation materials (local only)
+interview-prep/
