@@ -135,3 +135,9 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
+variable "enable_aws_load_balancer_controller" {
+  description = "Enable IAM role for AWS Load Balancer Controller"
+  type        = bool
+  default     = true
+}
