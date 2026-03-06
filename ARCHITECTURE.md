@@ -74,6 +74,101 @@
 └───────────────────────────────────────────────────────────────┘
 ```
 
+
+## External Traffic Flow
+
+Complete request path from internet to application:
+
+```
+┌─────────────┐
+│   Internet  │
+│    User     │
+└──────┬──────┘
+       │ HTTPS request (demo.example.com)
+       ▼
+┌──────────────────────────────────────┐
+│         Route 53 (DNS)               │
+│  • Resolves domain to ALB            │
+│  • Health checks                     │
+│  • Failover policies                 │
+└──────┬───────────────────────────────┘
+       │ Routed to ALB DNS
+       ▼
+┌──────────────────────────────────────┐
+│  Application Load Balancer (ALB)     │
+│  • SSL/TLS termination (ACM cert)    │
+│  • WAF protection                    │
+│  • L7 routing                        │
+│  • Health checks to targets          │
+└──────┬───────────────────────────────┘
+       │ HTTP to targets
+       ▼
+┌──────────────────────────────────────┐
+│  AWS Load Balancer Controller        │
+│  • Manages ALB via Ingress           │
+│  • Target registration               │
+│  • Health monitoring                 │
+└──────┬───────────────────────────────┘
+       │ Routes to service
+       ▼
+┌──────────────────────────────────────┐
+│  Kubernetes Ingress Resource         │
+│  • Path-based routing                │
+│  • Host-based routing                │
+│  • Backend service mapping           │
+└──────┬───────────────────────────────┘
+       │ To ClusterIP service
+       ▼
+┌──────────────────────────────────────┐
+│  Kubernetes Service (ClusterIP)      │
+│  • Load balancing across pods        │
+│  • Service discovery                 │
+│  • Internal DNS (demo-app.default)   │
+└──────┬───────────────────────────────┘
+       │ To pod endpoint
+       ▼
+┌──────────────────────────────────────┐
+│  Application Pod                     │
+│  • demo-app container                │
+│  • Health checks (/health, /ready)   │
+│  • Metrics endpoint (/metrics)       │
+└──────────────────────────────────────┘
+```
+
+### Layer Responsibilities
+
+| Layer | Purpose | Technology |
+|-------|---------|------------|
+| DNS | Domain resolution, health checks, failover | Route 53 |
+| Load Balancer | SSL termination, WAF, L7 routing | ALB |
+| Controller | ALB lifecycle, target management | AWS LB Controller |
+| Ingress | Path/host routing, annotations | Kubernetes Ingress |
+| Service | Pod load balancing, discovery | Kubernetes Service |
+| Pod | Application logic | Container (Node.js) |
+
+### Traffic Flow Examples
+
+**Example 1: HTTPS Request**
+```
+https://demo.example.com/api/items
+  → Route 53 resolves to ALB
+  → ALB terminates SSL with ACM certificate
+  → ALB forwards HTTP to target (pod IP)
+  → Ingress routes /api/* to demo-app service
+  → Service load balances to pod
+  → Pod handles request
+```
+
+**Example 2: Health Check**
+```
+ALB health check every 15s
+  → HTTP GET /health to pod IP
+  → Pod responds 200 OK
+  → ALB marks target healthy
+  → Route 53 health check to ALB DNS
+  → Route 53 marks endpoint healthy
+```
+
 ## CI/CD Flow
 
 ### Continuous Integration (Jenkins)
@@ -199,3 +294,86 @@ aws-platform-infra/               # Module consumers
 - Git provides point-in-time recovery
 - ECR images are immutable and versioned
 - Terraform state is versioned in S3
+
+## DNS and SSL/TLS Setup
+
+### Route 53 Configuration
+
+**Hosted Zone:**
+- Domain: `example.com`
+- Name servers delegated from domain registrar
+- Records managed via Terraform
+
+**A Record (Alias):**
+```
+demo.example.com → ALB DNS name
+  Type: A (Alias)
+  Target: dualstack.k8s-default-demoapp-xxxx.us-east-1.elb.amazonaws.com
+  Evaluate target health: Yes
+```
+
+**Health Checks:**
+- Protocol: HTTPS
+- Path: /health
+- Interval: 30 seconds
+- Failure threshold: 3
+- CloudWatch alarm on failure
+
+### SSL/TLS Certificates (ACM)
+
+**Certificate Request:**
+```
+Primary domain: demo.example.com
+SANs: *.demo.example.com, api.demo.example.com
+Validation: DNS (automatic via Route 53)
+Auto-renewal: Yes (before expiration)
+```
+
+**DNS Validation Records:**
+ACM creates CNAME records in Route 53:
+```
+_xxxxx.demo.example.com → _xxxxx.acm-validations.aws
+```
+
+**Certificate Attachment:**
+- Attached to ALB listener (port 443)
+- Managed by AWS Load Balancer Controller via Ingress annotation
+- No certificate handling in application pod
+
+### Multi-Region Setup (Optional)
+
+For high availability across regions:
+
+```
+┌─────────────┐
+│  Route 53   │
+│             │
+│  Failover   │
+│  Policy     │
+└──┬───────┬──┘
+   │       │
+   │       └──────────────┐
+   │                      │
+   ▼                      ▼
+┌──────────┐         ┌──────────┐
+│ us-east-1│         │ eu-west-1│
+│   ALB    │         │   ALB    │
+└────┬─────┘         └────┬─────┘
+     │                    │
+     ▼                    ▼
+   EKS Cluster       EKS Cluster
+```
+
+### Domain Setup Requirements
+
+For complete setup, you need:
+
+1. **Domain Name** (~$12/year from Route 53 or other registrar)
+2. **Hosted Zone in Route 53** (~$0.50/month)
+3. **ACM Certificate** (Free)
+4. **ALB** (Created automatically by Ingress, ~$16/month)
+
+**Note:** For portfolio/demo purposes without a real domain:
+- Use ALB DNS directly (ugly but works)
+- Use self-signed certificate
+- Document "would use Route 53 + ACM in production"
