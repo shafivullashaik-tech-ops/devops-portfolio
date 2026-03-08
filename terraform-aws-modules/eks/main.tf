@@ -80,11 +80,14 @@ resource "aws_eks_cluster" "main" {
 
   enabled_cluster_log_types = var.cluster_log_types
 
-  encryption_config {
-    provider {
-      key_arn = var.cluster_encryption_key_arn
+  dynamic "encryption_config" {
+    for_each = var.cluster_encryption_key_arn != null ? [1] : []
+    content {
+      provider {
+        key_arn = var.cluster_encryption_key_arn
+      }
+      resources = ["secrets"]
     }
-    resources = ["secrets"]
   }
 
   depends_on = [
@@ -182,7 +185,15 @@ resource "aws_eks_node_group" "main" {
   disk_size      = lookup(each.value, "disk_size", 30)
 
   labels = lookup(each.value, "labels", {})
-  taints = lookup(each.value, "taints", [])
+
+  dynamic "taint" {
+    for_each = lookup(each.value, "taints", [])
+    content {
+      key    = taint.value["key"]
+      value  = taint.value["value"]
+      effect = taint.value["effect"]
+    }
+  }
 
   depends_on = [
     aws_iam_role_policy_attachment.node_worker_policy,
