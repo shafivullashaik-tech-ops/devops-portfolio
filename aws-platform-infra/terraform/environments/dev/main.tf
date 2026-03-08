@@ -211,6 +211,27 @@ output "jenkins_irsa_role_arn" {
 }
 
 ################################################################################
+# EBS CSI Driver Addon
+# Required for PVC provisioning using gp2/gp3 StorageClass on EKS 1.23+
+################################################################################
+
+resource "aws_eks_addon" "ebs_csi_driver" {
+  cluster_name                = module.eks.cluster_id
+  addon_name                  = "aws-ebs-csi-driver"
+  resolve_conflicts_on_create = "OVERWRITE"
+  resolve_conflicts_on_update = "OVERWRITE"
+
+  depends_on = [module.eks]
+
+  tags = local.common_tags
+}
+
+output "ebs_csi_driver_addon" {
+  description = "EBS CSI Driver addon status"
+  value       = aws_eks_addon.ebs_csi_driver.status
+}
+
+################################################################################
 # Jenkins Module (Placeholder)
 # Uncomment when Jenkins module is ready
 ################################################################################
