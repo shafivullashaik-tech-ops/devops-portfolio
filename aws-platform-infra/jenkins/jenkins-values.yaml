@@ -24,8 +24,9 @@ controller:
   javaOpts: "-Xms512m -Xmx1024m -Djenkins.install.runSetupWizard=false"
 
   # Admin credentials (change in production!)
-  adminUser: "admin"
-  adminPassword: "Admin@1234!"
+  admin:
+    username: "admin"
+    password: "Admin@1234!"
 
   # Plugins to install
   installPlugins:
