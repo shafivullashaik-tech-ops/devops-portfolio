@@ -99,8 +99,10 @@ else
         --namespace monitoring \
         --set prometheus.prometheusSpec.serviceMonitorSelectorNilUsesHelmValues=false \
         --set grafana.adminPassword="Admin@1234!" \
+        --set grafana.persistence.enabled=false \
+        --set prometheus.prometheusSpec.storageSpec.volumeClaimTemplate.spec.storageClassName=gp2 \
         --wait \
-        --timeout 15m
+        --timeout 20m
 fi
 
 log_info "Monitoring stack deployed ✓"
