@@ -76,8 +76,37 @@ log_step "3/5  Deploying App-of-Apps (bootstraps all platform services)"
 kubectl apply -f "${GITOPS_DIR}/apps/app-of-apps.yaml"
 log_info "App-of-Apps applied. ArgoCD will sync platform services automatically ✓"
 
-# ─── Step 4: Deploy Jenkins ───────────────────────────────────────────────────
-log_step "4/5  Deploying Jenkins (CI engine)"
+# ─── Step 4: Deploy Monitoring Stack ──────────────────────────────────────────
+# NOTE: Deploy monitoring BEFORE Jenkins so Prometheus CRDs exist for ServiceMonitor
+log_step "4/5  Deploying Monitoring Stack (Prometheus + Grafana)"
+
+kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm repo update
+
+MONITORING_VALUES="${PROJECT_ROOT}/sre-observability-stack/monitoring/kube-prometheus-stack/values.yaml"
+if [ -f "${MONITORING_VALUES}" ]; then
+    helm upgrade --install kube-prometheus-stack \
+        prometheus-community/kube-prometheus-stack \
+        --namespace monitoring \
+        --values "${MONITORING_VALUES}" \
+        --wait \
+        --timeout 15m
+else
+    helm upgrade --install kube-prometheus-stack \
+        prometheus-community/kube-prometheus-stack \
+        --namespace monitoring \
+        --set prometheus.prometheusSpec.serviceMonitorSelectorNilUsesHelmValues=false \
+        --set grafana.adminPassword="Admin@1234!" \
+        --wait \
+        --timeout 15m
+fi
+
+log_info "Monitoring stack deployed ✓"
+
+# ─── Step 5: Deploy Jenkins ───────────────────────────────────────────────────
+log_step "5/5  Deploying Jenkins (CI engine)"
 
 # Get Jenkins IRSA role ARN from Terraform output
 JENKINS_IRSA_ARN=$(cd "${PROJECT_ROOT}/aws-platform-infra/terraform/environments/dev" && \
@@ -106,34 +135,6 @@ helm upgrade --install jenkins jenkins/jenkins \
 
 log_info "Jenkins deployed ✓"
 bash "${SCRIPT_DIR}/get-jenkins-info.sh" jenkins || log_warn "Could not get Jenkins info yet - try again in 2 min"
-
-# ─── Step 5: Deploy Monitoring Stack ──────────────────────────────────────────
-log_step "5/5  Deploying Monitoring Stack (Prometheus + Grafana)"
-
-kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
-
-helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-helm repo update
-
-MONITORING_VALUES="${PROJECT_ROOT}/sre-observability-stack/monitoring/kube-prometheus-stack/values.yaml"
-if [ -f "${MONITORING_VALUES}" ]; then
-    helm upgrade --install kube-prometheus-stack \
-        prometheus-community/kube-prometheus-stack \
-        --namespace monitoring \
-        --values "${MONITORING_VALUES}" \
-        --wait \
-        --timeout 15m
-else
-    helm upgrade --install kube-prometheus-stack \
-        prometheus-community/kube-prometheus-stack \
-        --namespace monitoring \
-        --set prometheus.prometheusSpec.serviceMonitorSelectorNilUsesHelmValues=false \
-        --set grafana.adminPassword="Admin@1234!" \
-        --wait \
-        --timeout 15m
-fi
-
-log_info "Monitoring stack deployed ✓"
 
 # ─── Summary ──────────────────────────────────────────────────────────────────
 echo ""
