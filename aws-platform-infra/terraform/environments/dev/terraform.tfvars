@@ -12,7 +12,7 @@ public_subnet_cidrs  = ["10.0.1.0/24", "10.0.2.0/24"]
 private_subnet_cidrs = ["10.0.10.0/24", "10.0.11.0/24"]
 
 # EKS Configuration
-kubernetes_version      = "1.28"
+kubernetes_version      = "1.31"
 eks_public_access_cidrs = ["0.0.0.0/0"]
 
 # Application
