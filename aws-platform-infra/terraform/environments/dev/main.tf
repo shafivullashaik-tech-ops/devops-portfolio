@@ -226,11 +226,6 @@ resource "aws_eks_addon" "ebs_csi_driver" {
   tags = local.common_tags
 }
 
-output "ebs_csi_driver_addon" {
-  description = "EBS CSI Driver addon status"
-  value       = aws_eks_addon.ebs_csi_driver.status
-}
-
 ################################################################################
 # Jenkins Module (Placeholder)
 # Uncomment when Jenkins module is ready
