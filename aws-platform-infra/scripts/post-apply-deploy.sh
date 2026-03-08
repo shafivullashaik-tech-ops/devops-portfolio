@@ -47,10 +47,10 @@ kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
 GITOPS_DIR="${PROJECT_ROOT}/gitops-eks-platform"
 BOOTSTRAP_DIR="${GITOPS_DIR}/bootstrap"
 
-# kubectl apply -k requires kustomization.yaml - copy from argocd-install.yaml if missing
-if [ ! -f "${BOOTSTRAP_DIR}/kustomization.yaml" ] && [ -f "${BOOTSTRAP_DIR}/argocd-install.yaml" ]; then
-    log_info "Creating kustomization.yaml from argocd-install.yaml..."
-    cp "${BOOTSTRAP_DIR}/argocd-install.yaml" "${BOOTSTRAP_DIR}/kustomization.yaml"
+# kubectl apply -k requires a valid kustomization.yaml - always sync from argocd-install.yaml
+if [ -f "${BOOTSTRAP_DIR}/argocd-install.yaml" ]; then
+    log_info "Syncing kustomization.yaml from argocd-install.yaml..."
+    cp -f "${BOOTSTRAP_DIR}/argocd-install.yaml" "${BOOTSTRAP_DIR}/kustomization.yaml"
 fi
 
 kubectl apply -k "${BOOTSTRAP_DIR}"
