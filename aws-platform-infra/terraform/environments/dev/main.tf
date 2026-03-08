@@ -211,6 +211,16 @@ output "jenkins_irsa_role_arn" {
 }
 
 ################################################################################
+# Import existing node group into state (already exists in AWS)
+# Remove this block after first successful terraform apply
+################################################################################
+
+import {
+  to = module.eks.aws_eks_node_group.main["general"]
+  id = "portfolio-eks-dev:portfolio-eks-dev-general"
+}
+
+################################################################################
 # EBS CSI Driver Addon
 # Required for PVC provisioning using gp2/gp3 StorageClass on EKS 1.23+
 ################################################################################
