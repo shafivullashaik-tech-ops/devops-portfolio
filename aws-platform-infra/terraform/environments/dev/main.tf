@@ -228,10 +228,11 @@ import {
 resource "aws_eks_addon" "ebs_csi_driver" {
   cluster_name                = module.eks.cluster_id
   addon_name                  = "aws-ebs-csi-driver"
+  service_account_role_arn    = module.iam.ebs_csi_driver_role_arn
   resolve_conflicts_on_create = "OVERWRITE"
   resolve_conflicts_on_update = "OVERWRITE"
 
-  depends_on = [module.eks]
+  depends_on = [module.eks, module.iam]
 
   tags = local.common_tags
 }
@@ -259,24 +260,17 @@ resource "aws_eks_addon" "ebs_csi_driver" {
 # }
 
 ################################################################################
-# IAM Module for IRSA (Placeholder)
-# Uncomment when IAM module is ready
+# IAM Module for IRSA
+# Creates IRSA roles for EBS CSI driver and other services
 ################################################################################
 
-# module "iam" {
-#   source = "../../../../terraform-aws-modules/iam"
-#
-#   cluster_name       = local.cluster_name
-#   oidc_provider_arn  = module.eks.oidc_provider_arn
-#
-#   # Create IRSA role for ArgoCD
-#   create_argocd_role = true
-#   argocd_namespace   = "argocd"
-#
-#   # Create IRSA role for application
-#   create_app_role = true
-#   app_namespace   = "default"
-#   app_s3_buckets  = []
-#
-#   tags = local.common_tags
-# }
+module "iam" {
+  source = "../../../../terraform-aws-modules/iam"
+
+  cluster_name               = local.cluster_name
+  oidc_provider_arn          = module.eks.oidc_provider_arn
+  create_ebs_csi_driver_role = true
+  create_argocd_role         = false
+
+  tags = local.common_tags
+}
