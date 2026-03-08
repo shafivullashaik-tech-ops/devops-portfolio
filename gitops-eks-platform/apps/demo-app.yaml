@@ -1,4 +1,5 @@
 # Demo Application - Managed by ArgoCD
+# Uses multi-source to load values from a different path than the chart
 
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -10,13 +11,19 @@ metadata:
 spec:
   project: default
 
-  source:
-    repoURL: https://github.com/shafivullashaik-tech-ops/devops-portfolio.git
-    targetRevision: main
-    path: app-microservice-demo/helm
-    helm:
-      valueFiles:
-        - gitops-eks-platform/environments/dev/values.yaml
+  sources:
+    # Source 1: Helm chart
+    - repoURL: https://github.com/shafivullashaik-tech-ops/devops-portfolio.git
+      targetRevision: main
+      path: app-microservice-demo/helm
+      helm:
+        valueFiles:
+          - $values/gitops-eks-platform/environments/dev/values.yaml
+
+    # Source 2: Values file from repo root (referenced as $values)
+    - repoURL: https://github.com/shafivullashaik-tech-ops/devops-portfolio.git
+      targetRevision: main
+      ref: values
 
   destination:
     server: https://kubernetes.default.svc
