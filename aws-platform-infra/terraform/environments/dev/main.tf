@@ -6,10 +6,10 @@ terraform {
   required_version = ">= 1.5.0"
 
   backend "s3" {
-    bucket         = "portfolio-terraform-state"  # Update with your bucket name
+    bucket         = "devops-portfolio-tfstate-dev"
     key            = "dev/terraform.tfstate"
     region         = "us-east-1"
-    dynamodb_table = "portfolio-terraform-locks"
+    dynamodb_table = "devops-portfolio-tfstate-lock-dev"
     encrypt        = true
   }
 
