@@ -75,3 +75,6 @@ coverage/
 
 # Interview preparation materials (local only)
 interview-prep/
+
+# One-time utility scripts (local only)
+fix-author.sh
