@@ -45,7 +45,10 @@ log_step "2/5  Deploying ArgoCD (GitOps engine)"
 kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
 
 GITOPS_DIR="${PROJECT_ROOT}/gitops-eks-platform"
-kubectl apply -k "${GITOPS_DIR}/bootstrap/"
+
+# Convert Windows path to Unix path for kubectl on Git Bash
+BOOTSTRAP_DIR=$(cygpath -u "${GITOPS_DIR}/bootstrap" 2>/dev/null || echo "${GITOPS_DIR}/bootstrap")
+kubectl apply -k "${BOOTSTRAP_DIR}"
 
 log_info "Waiting for ArgoCD server to be ready (up to 5 min)..."
 kubectl wait --for=condition=available --timeout=300s \
