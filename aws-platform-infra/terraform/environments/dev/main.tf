@@ -8,9 +8,10 @@ terraform {
   backend "s3" {
     bucket         = "devops-portfolio-tfstate-dev"
     key            = "dev/terraform.tfstate"
-    region         = "us-east-1"
+    region         = "us-west-2"
     dynamodb_table = "devops-portfolio-tfstate-lock-dev"
     encrypt        = true
+    profile        = "shafi"
   }
 
   required_providers {
@@ -22,7 +23,8 @@ terraform {
 }
 
 provider "aws" {
-  region = var.aws_region
+  region  = var.aws_region
+  profile = "shafi"
 
   default_tags {
     tags = {
