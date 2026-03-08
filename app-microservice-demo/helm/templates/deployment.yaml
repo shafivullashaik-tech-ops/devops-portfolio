@@ -45,10 +45,6 @@ spec:
           {{- toYaml .Values.resources | nindent 12 }}
         env:
           {{- toYaml .Values.env | nindent 12 }}
-          {{- if .Values.image.tag }}
-          - name: VERSION
-            value: {{ .Values.image.tag | default .Chart.AppVersion | quote }}
-          {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
