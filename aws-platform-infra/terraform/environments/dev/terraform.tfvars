@@ -1,8 +1,8 @@
 # Dev Environment - Terraform Variables
-# AWS Account: 911046881165
-# Region: us-east-1
+# AWS Account: 050451393596 (shafi-terraform)
+# Region: us-west-2
 
-aws_region  = "us-east-1"
+aws_region  = "us-west-2"
 environment = "dev"
 owner       = "shafi"
 
