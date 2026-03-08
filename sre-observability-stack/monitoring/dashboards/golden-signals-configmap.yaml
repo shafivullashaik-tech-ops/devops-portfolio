@@ -1,0 +1,290 @@
+---
+# =============================================================
+# Grafana Dashboard — Golden Signals (ConfigMap)
+# Grafana sidecar will auto-import this when label matches.
+# Label: grafana_dashboard: "1"
+# =============================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: golden-signals-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  golden-signals.json: |
+    {
+      "__inputs": [],
+      "__requires": [
+        { "type": "grafana", "id": "grafana", "name": "Grafana", "version": "10.0.0" },
+        { "type": "datasource", "id": "prometheus", "name": "Prometheus", "version": "1.0.0" }
+      ],
+      "annotations": { "list": [] },
+      "description": "Golden Signals: Latency · Traffic · Errors · Saturation",
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 1,
+      "id": null,
+      "links": [],
+      "panels": [
+        {
+          "collapsed": false,
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+          "id": 1,
+          "title": "🚦 Traffic — Requests per Second",
+          "type": "row"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "lineWidth": 2, "fillOpacity": 10 },
+              "unit": "reqps"
+            }
+          },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 1 },
+          "id": 2,
+          "options": { "tooltip": { "mode": "multi" } },
+          "targets": [
+            {
+              "expr": "sum(rate(http_requests_total{job=\"sample-service\"}[5m])) by (route)",
+              "legendFormat": "{{ route }}",
+              "refId": "A"
+            }
+          ],
+          "title": "Request Rate by Route (RPS)",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "fieldConfig": {
+            "defaults": { "color": { "mode": "palette-classic" }, "unit": "reqps" }
+          },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 1 },
+          "id": 3,
+          "targets": [
+            {
+              "expr": "sum(rate(http_requests_total{job=\"sample-service\"}[5m]))",
+              "legendFormat": "Total RPS",
+              "refId": "A"
+            }
+          ],
+          "title": "Total Request Rate",
+          "type": "timeseries"
+        },
+        {
+          "collapsed": false,
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 },
+          "id": 10,
+          "title": "⚠️ Errors — 5xx Error Rate",
+          "type": "row"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "fieldConfig": {
+            "defaults": {
+              "color": { "fixedColor": "red", "mode": "fixed" },
+              "custom": { "lineWidth": 2, "fillOpacity": 20 },
+              "unit": "percentunit",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "yellow", "value": 0.01 },
+                  { "color": "red", "value": 0.05 }
+                ]
+              }
+            }
+          },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 10 },
+          "id": 11,
+          "targets": [
+            {
+              "expr": "sum(rate(http_requests_total{job=\"sample-service\",status=~\"5..\"}[5m])) / sum(rate(http_requests_total{job=\"sample-service\"}[5m]))",
+              "legendFormat": "5xx Error Rate",
+              "refId": "A"
+            }
+          ],
+          "title": "HTTP 5xx Error Rate",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "fieldConfig": {
+            "defaults": { "unit": "percentunit", "color": { "mode": "thresholds" },
+              "thresholds": { "mode": "absolute", "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 0.05 },
+                { "color": "red", "value": 0.10 }
+              ]}
+            }
+          },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 10 },
+          "id": 12,
+          "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "orientation": "auto", "textMode": "auto", "colorMode": "background" },
+          "targets": [
+            {
+              "expr": "sum(rate(http_requests_total{job=\"sample-service\",status=~\"5..\"}[5m])) / sum(rate(http_requests_total{job=\"sample-service\"}[5m]))",
+              "legendFormat": "Error Rate",
+              "refId": "A"
+            }
+          ],
+          "title": "Current Error Rate",
+          "type": "stat"
+        },
+        {
+          "collapsed": false,
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 18 },
+          "id": 20,
+          "title": "⏱ Latency — P50 / P95 / P99",
+          "type": "row"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "lineWidth": 2 },
+              "unit": "s",
+              "thresholds": { "mode": "absolute", "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 0.5 },
+                { "color": "red", "value": 1.0 }
+              ]}
+            }
+          },
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 19 },
+          "id": 21,
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.50, sum(rate(http_request_duration_seconds_bucket{job=\"sample-service\"}[5m])) by (le))",
+              "legendFormat": "P50",
+              "refId": "A"
+            },
+            {
+              "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job=\"sample-service\"}[5m])) by (le))",
+              "legendFormat": "P95",
+              "refId": "B"
+            },
+            {
+              "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{job=\"sample-service\"}[5m])) by (le))",
+              "legendFormat": "P99",
+              "refId": "C"
+            }
+          ],
+          "title": "Request Latency Percentiles (P50/P95/P99)",
+          "type": "timeseries"
+        },
+        {
+          "collapsed": false,
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 27 },
+          "id": 30,
+          "title": "📈 Saturation — CPU & Memory",
+          "type": "row"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "fieldConfig": {
+            "defaults": { "unit": "percentunit", "min": 0, "max": 1,
+              "thresholds": { "mode": "absolute", "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 0.70 },
+                { "color": "red", "value": 0.85 }
+              ]}
+            }
+          },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 28 },
+          "id": 31,
+          "targets": [
+            {
+              "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=\"default\",container=\"sample-service\"}[5m])) by (pod) / sum(kube_pod_container_resource_limits{namespace=\"default\",container=\"sample-service\",resource=\"cpu\"}) by (pod)",
+              "legendFormat": "{{ pod }} CPU",
+              "refId": "A"
+            }
+          ],
+          "title": "CPU Utilisation (% of limit)",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "fieldConfig": {
+            "defaults": { "unit": "percentunit", "min": 0, "max": 1,
+              "thresholds": { "mode": "absolute", "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 0.75 },
+                { "color": "red", "value": 0.90 }
+              ]}
+            }
+          },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 28 },
+          "id": 32,
+          "targets": [
+            {
+              "expr": "sum(container_memory_working_set_bytes{namespace=\"default\",container=\"sample-service\"}) by (pod) / sum(kube_pod_container_resource_limits{namespace=\"default\",container=\"sample-service\",resource=\"memory\"}) by (pod)",
+              "legendFormat": "{{ pod }} Memory",
+              "refId": "A"
+            }
+          ],
+          "title": "Memory Utilisation (% of limit)",
+          "type": "timeseries"
+        },
+        {
+          "collapsed": false,
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 36 },
+          "id": 40,
+          "title": "🔄 Pod Restarts",
+          "type": "row"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "fieldConfig": {
+            "defaults": { "unit": "short", "color": { "mode": "thresholds" },
+              "thresholds": { "mode": "absolute", "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 1 },
+                { "color": "red", "value": 5 }
+              ]}
+            }
+          },
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 37 },
+          "id": 41,
+          "targets": [
+            {
+              "expr": "increase(kube_pod_container_status_restarts_total{namespace!=\"kube-system\"}[1h])",
+              "legendFormat": "{{ namespace }}/{{ pod }}",
+              "refId": "A"
+            }
+          ],
+          "title": "Pod Restart Count (last 1h)",
+          "type": "timeseries"
+        }
+      ],
+      "refresh": "30s",
+      "schemaVersion": 38,
+      "tags": ["sre", "golden-signals", "production"],
+      "templating": {
+        "list": [
+          {
+            "current": {},
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "definition": "label_values(http_requests_total, namespace)",
+            "hide": 0,
+            "includeAll": true,
+            "multi": false,
+            "name": "namespace",
+            "query": "label_values(http_requests_total, namespace)",
+            "refresh": 2,
+            "sort": 1,
+            "type": "query",
+            "label": "Namespace"
+          }
+        ]
+      },
+      "time": { "from": "now-1h", "to": "now" },
+      "timepicker": {},
+      "timezone": "browser",
+      "title": "Golden Signals — SRE Dashboard",
+      "uid": "golden-signals",
+      "version": 1
+    }

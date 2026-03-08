@@ -1,0 +1,302 @@
+---
+# =============================================================
+# PrometheusRule — Golden Signals Alert Rules
+# Namespace: monitoring
+# Covers: CrashLoopBackOff · High Error Rate · High Latency
+# Each alert annotation includes a runbook_url
+# =============================================================
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: golden-signals-rules
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack   # Must match Prometheus ruleSelector
+    app: kube-prometheus-stack
+    role: alert-rules
+spec:
+  groups:
+
+    # ──────────────────────────────────────────────────────
+    # Group 1: Application Availability
+    # ──────────────────────────────────────────────────────
+    - name: application.availability
+      interval: 30s
+      rules:
+
+        # ── CrashLoopBackOff ──────────────────────────────
+        - alert: PodCrashLooping
+          expr: |
+            increase(
+              kube_pod_container_status_restarts_total{
+                namespace!="kube-system"
+              }[15m]
+            ) > 3
+          for: 5m
+          labels:
+            severity: critical
+            team: platform
+            category: availability
+          annotations:
+            summary: "Pod {{ $labels.namespace }}/{{ $labels.pod }} is crash-looping"
+            description: >
+              Container {{ $labels.container }} in pod {{ $labels.pod }}
+              (namespace {{ $labels.namespace }}) has restarted
+              {{ $value | humanize }} times in the last 15 minutes.
+            runbook_url: "https://github.com/shafivullashaik-tech-ops/devops-portfolio/blob/main/sre-observability-stack/runbooks/crashloop.md"
+            dashboard_url: "http://grafana.monitoring.svc.cluster.local/d/golden-signals/golden-signals?var-namespace={{ $labels.namespace }}&var-pod={{ $labels.pod }}"
+
+        # ── OOMKilled ─────────────────────────────────────
+        - alert: PodOOMKilled
+          expr: |
+            kube_pod_container_status_last_terminated_reason{reason="OOMKilled"} == 1
+          for: 0m
+          labels:
+            severity: warning
+            team: platform
+            category: availability
+          annotations:
+            summary: "Pod {{ $labels.namespace }}/{{ $labels.pod }} was OOMKilled"
+            description: >
+              Container {{ $labels.container }} was OOM-killed.
+              Consider increasing memory limits or investigating memory leaks.
+            runbook_url: "https://github.com/shafivullashaik-tech-ops/devops-portfolio/blob/main/sre-observability-stack/runbooks/crashloop.md#oomkilled"
+
+        # ── Deployment replicas unavailable ───────────────
+        - alert: DeploymentReplicasUnavailable
+          expr: |
+            (
+              kube_deployment_status_replicas_available
+              /
+              kube_deployment_spec_replicas
+            ) < 0.5
+          for: 5m
+          labels:
+            severity: critical
+            team: platform
+            category: availability
+          annotations:
+            summary: "Deployment {{ $labels.namespace }}/{{ $labels.deployment }} has < 50% replicas available"
+            description: >
+              Only {{ $value | humanizePercentage }} of desired replicas are available
+              for deployment {{ $labels.deployment }} in namespace {{ $labels.namespace }}.
+            runbook_url: "https://github.com/shafivullashaik-tech-ops/devops-portfolio/blob/main/sre-observability-stack/runbooks/crashloop.md"
+
+    # ──────────────────────────────────────────────────────
+    # Group 2: Error Rate (Golden Signal — Errors)
+    # ──────────────────────────────────────────────────────
+    - name: application.errors
+      interval: 30s
+      rules:
+
+        # ── High HTTP 5xx error rate ──────────────────────
+        - alert: HighErrorRate
+          expr: |
+            (
+              sum(rate(http_requests_total{status=~"5..", job="sample-service"}[5m]))
+              /
+              sum(rate(http_requests_total{job="sample-service"}[5m]))
+            ) > 0.05
+          for: 5m
+          labels:
+            severity: critical
+            team: backend
+            category: errors
+          annotations:
+            summary: "High HTTP 5xx error rate on sample-service ({{ $value | humanizePercentage }})"
+            description: >
+              Error rate has exceeded 5% for the last 5 minutes.
+              Current rate: {{ $value | humanizePercentage }}.
+              Investigate application logs and recent deployments.
+            runbook_url: "https://github.com/shafivullashaik-tech-ops/devops-portfolio/blob/main/sre-observability-stack/runbooks/high-error-rate.md"
+            dashboard_url: "http://grafana.monitoring.svc.cluster.local/d/golden-signals/golden-signals"
+
+        # ── Elevated 4xx rate (client errors / bad config) ─
+        - alert: ElevatedClientErrorRate
+          expr: |
+            (
+              sum(rate(http_requests_total{status=~"4..", job="sample-service"}[5m]))
+              /
+              sum(rate(http_requests_total{job="sample-service"}[5m]))
+            ) > 0.10
+          for: 10m
+          labels:
+            severity: warning
+            team: backend
+            category: errors
+          annotations:
+            summary: "Elevated 4xx client error rate on sample-service ({{ $value | humanizePercentage }})"
+            description: >
+              Client error rate has exceeded 10% for 10 minutes.
+              May indicate bad client configuration, auth issues, or missing routes.
+            runbook_url: "https://github.com/shafivullashaik-tech-ops/devops-portfolio/blob/main/sre-observability-stack/runbooks/high-error-rate.md#4xx"
+
+        # ── SLO burn rate (fast burn — 1h window) ─────────
+        - alert: SLOErrorBudgetBurnRateFast
+          expr: |
+            (
+              sum(rate(http_requests_total{status=~"5..", job="sample-service"}[1h]))
+              /
+              sum(rate(http_requests_total{job="sample-service"}[1h]))
+            ) > 14.4 * 0.001
+          for: 2m
+          labels:
+            severity: critical
+            team: backend
+            category: slo
+          annotations:
+            summary: "SLO error budget burning fast (14.4x) on sample-service"
+            description: >
+              The service is burning through its monthly error budget 14.4× faster than allowed.
+              At this rate the monthly budget will be exhausted in 5 hours.
+            runbook_url: "https://github.com/shafivullashaik-tech-ops/devops-portfolio/blob/main/sre-observability-stack/runbooks/high-error-rate.md#slo-burn"
+
+    # ──────────────────────────────────────────────────────
+    # Group 3: Latency (Golden Signal — Latency)
+    # ──────────────────────────────────────────────────────
+    - name: application.latency
+      interval: 30s
+      rules:
+
+        # ── P99 latency > 1s ──────────────────────────────
+        - alert: HighP99Latency
+          expr: |
+            histogram_quantile(
+              0.99,
+              sum(rate(http_request_duration_seconds_bucket{job="sample-service"}[5m])) by (le, route)
+            ) > 1.0
+          for: 5m
+          labels:
+            severity: critical
+            team: backend
+            category: latency
+          annotations:
+            summary: "P99 latency > 1s on route {{ $labels.route }} (sample-service)"
+            description: >
+              The 99th percentile latency for route {{ $labels.route }} is
+              {{ $value | humanizeDuration }}, exceeding the 1s SLO threshold.
+            runbook_url: "https://github.com/shafivullashaik-tech-ops/devops-portfolio/blob/main/sre-observability-stack/runbooks/high-latency.md"
+            dashboard_url: "http://grafana.monitoring.svc.cluster.local/d/golden-signals/golden-signals"
+
+        # ── P50 latency > 500ms ────────────────────────────
+        - alert: ElevatedP50Latency
+          expr: |
+            histogram_quantile(
+              0.50,
+              sum(rate(http_request_duration_seconds_bucket{job="sample-service"}[5m])) by (le)
+            ) > 0.5
+          for: 10m
+          labels:
+            severity: warning
+            team: backend
+            category: latency
+          annotations:
+            summary: "Median (P50) latency > 500ms on sample-service"
+            description: >
+              Median latency is {{ $value | humanizeDuration }}.
+              This affects the majority of users; investigate upstream dependencies and DB queries.
+            runbook_url: "https://github.com/shafivullashaik-tech-ops/devops-portfolio/blob/main/sre-observability-stack/runbooks/high-latency.md#p50"
+
+    # ──────────────────────────────────────────────────────
+    # Group 4: Saturation (Golden Signal — Saturation)
+    # ──────────────────────────────────────────────────────
+    - name: application.saturation
+      interval: 30s
+      rules:
+
+        # ── High CPU usage ────────────────────────────────
+        - alert: HighCPUSaturation
+          expr: |
+            (
+              sum(rate(container_cpu_usage_seconds_total{
+                namespace="default",
+                container="sample-service"
+              }[5m])) by (pod)
+              /
+              sum(kube_pod_container_resource_limits{
+                namespace="default",
+                container="sample-service",
+                resource="cpu"
+              }) by (pod)
+            ) > 0.80
+          for: 10m
+          labels:
+            severity: warning
+            team: platform
+            category: saturation
+          annotations:
+            summary: "CPU saturation > 80% for pod {{ $labels.pod }}"
+            description: >
+              Pod {{ $labels.pod }} is using {{ $value | humanizePercentage }} of its CPU limit.
+              Consider horizontal scaling or increasing resource limits.
+            runbook_url: "https://github.com/shafivullashaik-tech-ops/devops-portfolio/blob/main/sre-observability-stack/runbooks/high-latency.md#saturation"
+
+        # ── High memory usage ─────────────────────────────
+        - alert: HighMemorySaturation
+          expr: |
+            (
+              sum(container_memory_working_set_bytes{
+                namespace="default",
+                container="sample-service"
+              }) by (pod)
+              /
+              sum(kube_pod_container_resource_limits{
+                namespace="default",
+                container="sample-service",
+                resource="memory"
+              }) by (pod)
+            ) > 0.85
+          for: 10m
+          labels:
+            severity: warning
+            team: platform
+            category: saturation
+          annotations:
+            summary: "Memory saturation > 85% for pod {{ $labels.pod }}"
+            description: >
+              Pod {{ $labels.pod }} is using {{ $value | humanizePercentage }} of its memory limit.
+              Risk of OOMKill; investigate for memory leaks or increase limits.
+            runbook_url: "https://github.com/shafivullashaik-tech-ops/devops-portfolio/blob/main/sre-observability-stack/runbooks/high-latency.md#saturation"
+
+        # ── Disk pressure ─────────────────────────────────
+        - alert: NodeDiskPressure
+          expr: |
+            kube_node_status_condition{condition="DiskPressure", status="true"} == 1
+          for: 2m
+          labels:
+            severity: critical
+            team: platform
+            category: saturation
+          annotations:
+            summary: "Node {{ $labels.node }} has disk pressure"
+            description: >
+              Node {{ $labels.node }} is under disk pressure.
+              Pods may be evicted. Clean up unused images or expand disk.
+            runbook_url: "https://github.com/shafivullashaik-tech-ops/devops-portfolio/blob/main/sre-observability-stack/runbooks/high-latency.md#disk"
+
+    # ──────────────────────────────────────────────────────
+    # Group 5: Traffic (Golden Signal — Traffic)
+    # ──────────────────────────────────────────────────────
+    - name: application.traffic
+      interval: 60s
+      rules:
+
+        # ── Traffic drop (possible upstream issue) ────────
+        - alert: TrafficDrop
+          expr: |
+            (
+              sum(rate(http_requests_total{job="sample-service"}[5m]))
+              /
+              sum(rate(http_requests_total{job="sample-service"}[5m] offset 1h))
+            ) < 0.20
+          for: 5m
+          labels:
+            severity: warning
+            team: backend
+            category: traffic
+          annotations:
+            summary: "Traffic to sample-service dropped > 80% vs 1h ago"
+            description: >
+              Current RPS is {{ $value | humanizePercentage }} of the value 1 hour ago.
+              This may indicate a broken ingress, DNS issue, or upstream LB misconfiguration.
+            runbook_url: "https://github.com/shafivullashaik-tech-ops/devops-portfolio/blob/main/sre-observability-stack/runbooks/high-error-rate.md#traffic-drop"
