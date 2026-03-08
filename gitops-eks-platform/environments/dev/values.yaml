@@ -4,7 +4,7 @@
 replicaCount: 2
 
 image:
-  repository: YOUR_AWS_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/demo-app
+  repository: 050451393596.dkr.ecr.us-west-2.amazonaws.com/demo-app
   tag: latest
   pullPolicy: Always
 
