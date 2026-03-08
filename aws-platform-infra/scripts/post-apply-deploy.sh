@@ -53,7 +53,8 @@ if [ -f "${BOOTSTRAP_DIR}/argocd-install.yaml" ]; then
     cp -f "${BOOTSTRAP_DIR}/argocd-install.yaml" "${BOOTSTRAP_DIR}/kustomization.yaml"
 fi
 
-kubectl apply -k "${BOOTSTRAP_DIR}"
+kubectl apply -k "${BOOTSTRAP_DIR}" --server-side 2>/dev/null || \
+    kubectl apply -k "${BOOTSTRAP_DIR}" --server-side --force-conflicts
 
 log_info "Waiting for ArgoCD server to be ready (up to 5 min)..."
 kubectl wait --for=condition=available --timeout=300s \
