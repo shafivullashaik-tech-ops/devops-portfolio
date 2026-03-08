@@ -91,8 +91,12 @@ if [ -f "${MONITORING_VALUES}" ]; then
         prometheus-community/kube-prometheus-stack \
         --namespace monitoring \
         --values "${MONITORING_VALUES}" \
+        --set grafana.persistence.storageClassName=gp2 \
+        --set grafana.adminPassword="Admin@1234!" \
+        --set prometheus.prometheusSpec.storageSpec.volumeClaimTemplate.spec.storageClassName=gp2 \
+        --set alertmanager.alertmanagerSpec.storage.volumeClaimTemplate.spec.storageClassName=gp2 \
         --wait \
-        --timeout 15m
+        --timeout 20m
 else
     helm upgrade --install kube-prometheus-stack \
         prometheus-community/kube-prometheus-stack \
