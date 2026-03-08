@@ -134,6 +134,83 @@ module "ecr" {
 }
 
 ################################################################################
+# Jenkins IRSA - IAM Role for Jenkins to access ECR & EKS
+################################################################################
+
+resource "aws_iam_role" "jenkins_irsa" {
+  name = "${local.cluster_name}-jenkins-irsa"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Principal = {
+        Federated = module.eks.oidc_provider_arn
+      }
+      Action = "sts:AssumeRoleWithWebIdentity"
+      Condition = {
+        StringEquals = {
+          "${replace(module.eks.oidc_provider_arn, "/^(.*provider/)/", "")}:sub" = "system:serviceaccount:jenkins:jenkins"
+          "${replace(module.eks.oidc_provider_arn, "/^(.*provider/)/", "")}:aud" = "sts.amazonaws.com"
+        }
+      }
+    }]
+  })
+
+  tags = local.common_tags
+}
+
+resource "aws_iam_role_policy" "jenkins_ecr_policy" {
+  name = "${local.cluster_name}-jenkins-ecr-policy"
+  role = aws_iam_role.jenkins_irsa.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "ECRAuth"
+        Effect = "Allow"
+        Action = [
+          "ecr:GetAuthorizationToken"
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "ECRPushPull"
+        Effect = "Allow"
+        Action = [
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:GetRepositoryPolicy",
+          "ecr:DescribeRepositories",
+          "ecr:ListImages",
+          "ecr:DescribeImages",
+          "ecr:BatchGetImage",
+          "ecr:InitiateLayerUpload",
+          "ecr:UploadLayerPart",
+          "ecr:CompleteLayerUpload",
+          "ecr:PutImage"
+        ]
+        Resource = module.ecr.repository_arn
+      },
+      {
+        Sid    = "EKSDescribe"
+        Effect = "Allow"
+        Action = [
+          "eks:DescribeCluster"
+        ]
+        Resource = module.eks.cluster_arn
+      }
+    ]
+  })
+}
+
+output "jenkins_irsa_role_arn" {
+  description = "IAM Role ARN for Jenkins IRSA"
+  value       = aws_iam_role.jenkins_irsa.arn
+}
+
+################################################################################
 # Jenkins Module (Placeholder)
 # Uncomment when Jenkins module is ready
 ################################################################################
