@@ -150,12 +150,12 @@ controller:
     timeoutSeconds: 5
     failureThreshold: 3
 
-  # Prometheus metrics
-  prometheus:
-    enabled: true
-    serviceMonitorNamespace: "monitoring"
-    serviceMonitorAdditionalLabels:
-      release: kube-prometheus-stack
+  # Prometheus metrics - uncomment after monitoring stack (kube-prometheus-stack) is deployed
+  # prometheus:
+  #   enabled: true
+  #   serviceMonitorNamespace: "monitoring"
+  #   serviceMonitorAdditionalLabels:
+  #     release: kube-prometheus-stack
 
 # Persistent storage for Jenkins home
 persistence:
