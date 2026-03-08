@@ -5,8 +5,8 @@ replicaCount: 2
 
 image:
   repository: 050451393596.dkr.ecr.us-west-2.amazonaws.com/demo-app
-  tag: latest
-  pullPolicy: Always
+  tag: v1.0.0
+  pullPolicy: IfNotPresent
 
 service:
   type: ClusterIP
