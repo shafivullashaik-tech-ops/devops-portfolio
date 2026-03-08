@@ -1,3 +1,4 @@
+
 # Jenkins Helm Chart Values
 # Deploys Jenkins on EKS with:
 # - Configuration as Code (JCasC) - auto-configures pipeline
@@ -116,9 +117,6 @@ controller:
                   discardOldItems {
                     numToKeep(5)
                   }
-                }
-                triggers {
-                  periodic(5)
                 }
               }
 
