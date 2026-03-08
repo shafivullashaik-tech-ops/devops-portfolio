@@ -50,6 +50,7 @@ controller:
     - ws-cleanup:latest
     - pipeline-stage-view:latest
     - prometheus:latest
+    - job-dsl:latest
 
   # Configuration as Code - auto-configures Jenkins
   JCasC:
