@@ -22,6 +22,7 @@ data:
         timeout: 1s
         send_batch_size: 1024
       memory_limiter:
+        check_interval: 1s
         limit_mib: 256
         spike_limit_mib: 64
 
@@ -30,7 +31,7 @@ data:
         endpoint: "tempo.monitoring.svc.cluster.local:4317"
         tls:
           insecure: true
-      logging:
+      debug:
         verbosity: normal
 
     service:
@@ -38,7 +39,7 @@ data:
         traces:
           receivers: [otlp]
           processors: [memory_limiter, batch]
-          exporters: [otlp, logging]
+          exporters: [otlp, debug]
 
 ---
 apiVersion: apps/v1
