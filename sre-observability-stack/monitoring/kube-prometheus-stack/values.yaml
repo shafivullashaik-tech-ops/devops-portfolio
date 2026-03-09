@@ -199,6 +199,7 @@ grafana:
     security:
       disable_initial_admin_creation: false
       cookie_secure: false
+      strict_transport_security: false
     auth.anonymous:
       enabled: false
     log:
