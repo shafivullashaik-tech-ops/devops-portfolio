@@ -1,0 +1,37 @@
+# Tempo Helm Values — Distributed Tracing Backend
+# Chart: grafana/tempo
+# Stores traces from OpenTelemetry Collector
+
+tempo:
+  storage:
+    trace:
+      backend: local
+      local:
+        path: /var/tempo/wal
+
+  retention: 24h
+
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: "0.0.0.0:4317"
+        http:
+          endpoint: "0.0.0.0:4318"
+    jaeger:
+      protocols:
+        grpc:
+          endpoint: "0.0.0.0:14250"
+
+  metricsGenerator:
+    enabled: true
+    remoteWriteUrl: "http://kube-prometheus-prometheus.monitoring.svc.cluster.local:9090/api/v1/write"
+
+persistence:
+  enabled: true
+  storageClassName: gp2
+  size: 10Gi
+
+serviceMonitor:
+  enabled: true
+  namespace: monitoring
