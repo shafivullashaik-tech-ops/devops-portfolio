@@ -1,0 +1,117 @@
+# Loki Stack Helm Values
+# Chart: grafana/loki-stack
+# Includes: Loki (log storage) + Promtail (log collector)
+
+# ─── Loki ────────────────────────────────────────────────
+loki:
+  enabled: true
+
+  persistence:
+    enabled: true
+    storageClassName: gp2
+    size: 10Gi
+
+  config:
+    auth_enabled: false
+
+    ingester:
+      chunk_idle_period: 3m
+      chunk_block_size: 262144
+      chunk_retain_period: 1m
+
+    limits_config:
+      retention_period: 168h   # 7 days
+      ingestion_rate_mb: 16
+      ingestion_burst_size_mb: 32
+      max_streams_per_user: 10000
+
+    schema_config:
+      configs:
+        - from: "2024-01-01"
+          store: boltdb-shipper
+          object_store: filesystem
+          schema: v11
+          index:
+            prefix: index_
+            period: 24h
+
+    storage_config:
+      boltdb_shipper:
+        active_index_directory: /data/loki/boltdb-shipper-active
+        cache_location: /data/loki/boltdb-shipper-cache
+        cache_ttl: 24h
+        shared_store: filesystem
+      filesystem:
+        directory: /data/loki/chunks
+
+    compactor:
+      working_directory: /data/loki/boltdb-shipper-compactor
+      shared_store: filesystem
+      retention_enabled: true
+      retention_delete_delay: 2h
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  serviceMonitor:
+    enabled: true
+    additionalLabels:
+      release: kube-prometheus-stack
+
+# ─── Promtail (Log Collector on each node) ───────────────
+promtail:
+  enabled: true
+
+  config:
+    logLevel: info
+    serverPort: 3101
+
+    clients:
+      - url: http://loki-stack.logging.svc.cluster.local:3100/loki/api/v1/push
+
+    snippets:
+      # Collect all pod logs with structured JSON parsing
+      pipelineStages:
+        - docker: {}
+        - json:
+            expressions:
+              level: level
+              msg: msg
+              trace_id: trace_id    # Correlate with Tempo traces
+              timestamp: time
+        - labels:
+            level:
+            trace_id:
+        - timestamp:
+            source: timestamp
+            format: RFC3339Nano
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+  tolerations:
+    - key: node-role.kubernetes.io/master
+      operator: Exists
+      effect: NoSchedule
+
+  serviceMonitor:
+    enabled: true
+    additionalLabels:
+      release: kube-prometheus-stack
+
+# ─── Grafana (disabled - already deployed via kube-prometheus-stack) ──
+grafana:
+  enabled: false
+  sidecar:
+    datasources:
+      enabled: false
