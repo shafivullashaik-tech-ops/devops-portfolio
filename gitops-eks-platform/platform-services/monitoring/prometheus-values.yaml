@@ -1,6 +1,6 @@
 # ArgoCD Application — kube-prometheus-stack
 # GitOps managed: ArgoCD syncs this automatically
-# DO NOT run helm upgrade manually - let ArgoCD manage it
+# Uses multi-source: chart from Helm repo + values from Git repo
 
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -12,39 +12,34 @@ metadata:
 spec:
   project: default
 
-  source:
-    repoURL: https://prometheus-community.github.io/helm-charts
-    chart: kube-prometheus-stack
-    targetRevision: "82.10.1"
-    helm:
-      releaseName: kube-prometheus-stack
-      valueFiles:
-        - $values/sre-observability-stack/monitoring/kube-prometheus-stack/values.yaml
-      values: |
-        grafana:
-          persistence:
-            storageClassName: gp2
-          adminPassword: "Admin@1234!"
-        prometheus:
-          prometheusSpec:
-            storageSpec:
-              volumeClaimTemplate:
-                spec:
-                  storageClassName: gp2
-        alertmanager:
-          alertmanagerSpec:
-            storage:
-              volumeClaimTemplate:
-                spec:
-                  storageClassName: gp2
-
   sources:
+    # Source 1: Helm chart from prometheus-community
     - repoURL: https://prometheus-community.github.io/helm-charts
       chart: kube-prometheus-stack
       targetRevision: "82.10.1"
       helm:
         releaseName: kube-prometheus-stack
+        valueFiles:
+          - $values/sre-observability-stack/monitoring/kube-prometheus-stack/values.yaml
+        values: |
+          grafana:
+            persistence:
+              storageClassName: gp2
+            adminPassword: "Admin@1234!"
+          prometheus:
+            prometheusSpec:
+              storageSpec:
+                volumeClaimTemplate:
+                  spec:
+                    storageClassName: gp2
+          alertmanager:
+            alertmanagerSpec:
+              storage:
+                volumeClaimTemplate:
+                  spec:
+                    storageClassName: gp2
 
+    # Source 2: Values files from Git repo (referenced as $values above)
     - repoURL: https://github.com/shafivullashaik-tech-ops/devops-portfolio.git
       targetRevision: main
       ref: values
@@ -55,8 +50,8 @@ spec:
 
   syncPolicy:
     automated:
-      prune: false       # Don't auto-prune monitoring (safety)
+      prune: false
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
-      - ServerSideApply=true   # Required for large CRDs
+      - ServerSideApply=true
