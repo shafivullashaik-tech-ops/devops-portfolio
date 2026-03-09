@@ -16,7 +16,7 @@ spec:
     path: app-microservice-demo/helm
     helm:
       valueFiles:
-        - ../../gitops-eks-platform/environments/dev/values.yaml
+        - gitops-eks-platform/environments/dev/values.yaml
 
   destination:
     server: https://kubernetes.default.svc

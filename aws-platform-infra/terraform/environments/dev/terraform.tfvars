@@ -1,0 +1,23 @@
+# Dev Environment - Terraform Variables
+# AWS Account: 050451393596 (shafi-terraform)
+# Region: us-west-2
+
+aws_region  = "us-west-2"
+environment = "dev"
+owner       = "shafi"
+
+# VPC Configuration
+vpc_cidr             = "10.0.0.0/16"
+public_subnet_cidrs  = ["10.0.1.0/24", "10.0.2.0/24"]
+private_subnet_cidrs = ["10.0.10.0/24", "10.0.11.0/24"]
+
+# EKS Configuration
+kubernetes_version      = "1.31"
+eks_public_access_cidrs = ["0.0.0.0/0"]
+
+# Application
+app_name = "demo-app"
+
+# Jenkins
+ec2_key_name          = "portfolio-key"
+jenkins_allowed_cidrs = ["0.0.0.0/0"]

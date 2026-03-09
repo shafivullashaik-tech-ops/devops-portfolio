@@ -6,8 +6,8 @@ pipeline {
 
     environment {
         // AWS Configuration (using IRSA - no hardcoded credentials!)
-        AWS_REGION = 'us-east-1'
-        AWS_ACCOUNT_ID = sh(script: 'aws sts get-caller-identity --query Account --output text', returnStdout: true).trim()
+        AWS_REGION = 'us-west-2'
+        AWS_ACCOUNT_ID = '050451393596'
 
         // ECR Configuration
         ECR_REPOSITORY = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/demo-app"
