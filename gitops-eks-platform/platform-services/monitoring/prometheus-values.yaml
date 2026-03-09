@@ -1,83 +1,62 @@
-# Prometheus Configuration
-# For monitoring Kubernetes cluster and applications
+# ArgoCD Application — kube-prometheus-stack
+# GitOps managed: ArgoCD syncs this automatically
+# DO NOT run helm upgrade manually - let ArgoCD manage it
 
-prometheus:
-  prometheusSpec:
-    retention: 15d
-    storageSpec:
-      volumeClaimTemplate:
-        spec:
-          accessModes: ["ReadWriteOnce"]
-          resources:
-            requests:
-              storage: 50Gi
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kube-prometheus-stack
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
 
-    # Scrape configs
-    additionalScrapeConfigs:
-      - job_name: 'demo-app'
-        kubernetes_sd_configs:
-          - role: pod
-        relabel_configs:
-          - source_labels: [__meta_kubernetes_pod_label_app]
-            action: keep
-            regex: demo-app
-          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
-            action: keep
-            regex: true
-          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
-            action: replace
-            target_label: __metrics_path__
-            regex: (.+)
-          - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
-            action: replace
-            regex: ([^:]+)(?::\d+)?;(\d+)
-            replacement: $1:$2
-            target_label: __address__
+  source:
+    repoURL: https://prometheus-community.github.io/helm-charts
+    chart: kube-prometheus-stack
+    targetRevision: "82.10.1"
+    helm:
+      releaseName: kube-prometheus-stack
+      valueFiles:
+        - $values/sre-observability-stack/monitoring/kube-prometheus-stack/values.yaml
+      values: |
+        grafana:
+          persistence:
+            storageClassName: gp2
+          adminPassword: "Admin@1234!"
+        prometheus:
+          prometheusSpec:
+            storageSpec:
+              volumeClaimTemplate:
+                spec:
+                  storageClassName: gp2
+        alertmanager:
+          alertmanagerSpec:
+            storage:
+              volumeClaimTemplate:
+                spec:
+                  storageClassName: gp2
 
-# Alertmanager configuration
-alertmanager:
-  enabled: true
-  config:
-    global:
-      resolve_timeout: 5m
-    route:
-      group_by: ['alertname', 'cluster', 'service']
-      group_wait: 10s
-      group_interval: 10s
-      repeat_interval: 12h
-      receiver: 'default'
-    receivers:
-      - name: 'default'
-        # Configure Slack, PagerDuty, etc. here
+  sources:
+    - repoURL: https://prometheus-community.github.io/helm-charts
+      chart: kube-prometheus-stack
+      targetRevision: "82.10.1"
+      helm:
+        releaseName: kube-prometheus-stack
 
-# Grafana configuration
-grafana:
-  enabled: true
-  adminPassword: admin  # Change in production!
-  persistence:
-    enabled: true
-    size: 10Gi
+    - repoURL: https://github.com/shafivullashaik-tech-ops/devops-portfolio.git
+      targetRevision: main
+      ref: values
 
-  dashboardProviders:
-    dashboardproviders.yaml:
-      apiVersion: 1
-      providers:
-        - name: 'default'
-          orgId: 1
-          folder: ''
-          type: file
-          disableDeletion: false
-          editable: true
-          options:
-            path: /var/lib/grafana/dashboards/default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
 
-  dashboards:
-    default:
-      kubernetes-cluster:
-        gnetId: 7249
-        revision: 1
-        datasource: Prometheus
-      kubernetes-pods:
-        gnetId: 6417
-        revision: 1
-        datasource: Prometheus
+  syncPolicy:
+    automated:
+      prune: false       # Don't auto-prune monitoring (safety)
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true   # Required for large CRDs

@@ -1,0 +1,45 @@
+# ArgoCD Application — Loki Stack (Logs)
+# GitOps managed via ArgoCD
+
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: loki-stack
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+
+  sources:
+    - repoURL: https://grafana.github.io/helm-charts
+      chart: loki-stack
+      targetRevision: "2.10.3"
+      helm:
+        releaseName: loki-stack
+        values: |
+          loki:
+            persistence:
+              storageClassName: gp2
+            service:
+              type: LoadBalancer
+          promtail:
+            resources:
+              requests:
+                cpu: 25m
+                memory: 32Mi
+
+    - repoURL: https://github.com/shafivullashaik-tech-ops/devops-portfolio.git
+      targetRevision: main
+      ref: values
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: logging
+
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
