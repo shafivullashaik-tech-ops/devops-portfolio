@@ -170,6 +170,11 @@ alertmanager:
 grafana:
   enabled: true
 
+  # Expose via LoadBalancer
+  service:
+    type: LoadBalancer
+    port: 80
+
   # Use a k8s secret for admin password in production
   adminPassword: "CHANGE_ME_IN_PRODUCTION"
 

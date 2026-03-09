@@ -6,6 +6,11 @@
 loki:
   enabled: true
 
+  # Expose Loki via LoadBalancer
+  service:
+    type: LoadBalancer
+    port: 3100
+
   persistence:
     enabled: true
     storageClassName: gp2
