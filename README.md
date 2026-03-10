@@ -104,10 +104,11 @@ kubectl port-forward svc/demo-app -n demo 3000:3000
 - Horizontal Pod Autoscaling
 - PodDisruptionBudgets for high availability
 
-### Observability
-- Prometheus metrics exposure
-- Structured JSON logging
-- Grafana dashboards
+### Observability (Three Pillars)
+- **Metrics**: Prometheus + Grafana (Golden Signals: Latency, Traffic, Errors, Saturation)
+- **Logs**: Loki + Promtail (structured JSON, trace_id correlation)
+- **Traces**: Tempo + OpenTelemetry Collector (distributed tracing)
+- Grafana dashboards with alert integration
 - Health and readiness endpoints
 - Application performance monitoring
 
