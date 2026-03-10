@@ -170,6 +170,11 @@ alertmanager:
 grafana:
   enabled: true
 
+  # Expose via LoadBalancer
+  service:
+    type: LoadBalancer
+    port: 80
+
   # Use a k8s secret for admin password in production
   adminPassword: "CHANGE_ME_IN_PRODUCTION"
 
@@ -189,12 +194,12 @@ grafana:
   # Grafana.ini overrides
   grafana.ini:
     server:
-      domain: grafana.example.com
-      root_url: "https://grafana.example.com"
+      domain: localhost
+      root_url: "%(protocol)s://%(domain)s:%(http_port)s/"
     security:
       disable_initial_admin_creation: false
-      cookie_secure: true
-      strict_transport_security: true
+      cookie_secure: false
+      strict_transport_security: false
     auth.anonymous:
       enabled: false
     log:

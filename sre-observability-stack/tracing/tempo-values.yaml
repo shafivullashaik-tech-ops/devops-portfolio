@@ -27,6 +27,11 @@ tempo:
     enabled: true
     remoteWriteUrl: "http://kube-prometheus-prometheus.monitoring.svc.cluster.local:9090/api/v1/write"
 
+# Expose Tempo via LoadBalancer
+service:
+  type: LoadBalancer
+  port: 3100
+
 persistence:
   enabled: true
   storageClassName: gp2
