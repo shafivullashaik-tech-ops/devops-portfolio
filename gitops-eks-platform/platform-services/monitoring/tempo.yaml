@@ -1,0 +1,43 @@
+# ArgoCD Application — Tempo (Distributed Tracing)
+# GitOps managed via ArgoCD
+
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tempo
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+
+  sources:
+    # Source 1: Helm chart from Grafana
+    - repoURL: https://grafana.github.io/helm-charts
+      chart: tempo
+      targetRevision: "1.24.4"
+      helm:
+        releaseName: tempo
+        valueFiles:
+          - $values/sre-observability-stack/tracing/tempo-values.yaml
+        values: |
+          service:
+            type: LoadBalancer
+          persistence:
+            storageClassName: gp2
+
+    # Source 2: Values files from Git repo
+    - repoURL: https://github.com/shafivullashaik-tech-ops/devops-portfolio.git
+      targetRevision: main
+      ref: values
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
