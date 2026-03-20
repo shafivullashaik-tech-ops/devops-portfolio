@@ -1,0 +1,56 @@
+# =============================================================================
+# ArgoCD Application — LLM Gateway
+#
+# Plugs into the EXISTING ArgoCD instance deployed in:
+#   gitops-eks-platform/bootstrap/argocd-install.yaml
+#
+# Apply once:
+#   kubectl apply -f k8s/argocd-app.yaml
+#
+# ArgoCD will then auto-sync k8s/ manifests to the EKS cluster.
+# Image tag is updated by Jenkins (Jenkinsfile Stage 7 — Update GitOps Repo).
+# =============================================================================
+
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: llm-gateway
+  namespace: argocd
+  labels:
+    team: platform
+    app: llm-gateway
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/shafivullashaik-tech-ops/devops-portfolio.git
+    targetRevision: main
+    path: llmops-rag-gateway/k8s
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: llmops
+
+  syncPolicy:
+    automated:
+      prune: true          # Remove resources deleted from git
+      selfHeal: true       # Revert manual kubectl changes
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+    retry:
+      limit: 3
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+
+  # Health checks
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas     # Managed by HPA — ignore drift
