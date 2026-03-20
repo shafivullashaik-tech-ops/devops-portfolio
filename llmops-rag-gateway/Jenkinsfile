@@ -1,0 +1,306 @@
+// =============================================================================
+// Jenkins Declarative Pipeline — LLM Ops RAG Gateway
+// Mirrors the pipeline style used across this portfolio (app-microservice-demo)
+//
+// Stages:
+//   1. Checkout
+//   2. Lint (ruff)
+//   3. Test (pytest — stub backend, no API key needed)
+//   4. Eval Gate (groundedness + citation + refusal quality check)
+//   5. Security Scan (Trivy + Dockerfile lint)
+//   6. Docker Build & Push (ECR)
+//   7. Update GitOps Repo (ArgoCD will sync)
+//   8. Notify
+// =============================================================================
+
+pipeline {
+    agent any
+
+    environment {
+        // AWS Configuration (IRSA — no hardcoded credentials)
+        AWS_REGION          = 'us-west-2'
+        AWS_ACCOUNT_ID      = '050451393596'
+
+        // ECR
+        ECR_REPOSITORY      = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/llm-gateway"
+
+        // Image versioning
+        GIT_COMMIT_SHORT    = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
+        IMAGE_TAG           = "${GIT_COMMIT_SHORT}-${BUILD_NUMBER}"
+
+        // App config
+        APP_NAME            = 'llm-gateway'
+        NAMESPACE           = 'llmops'
+
+        // LLM Gateway — CI uses stub backend (no OpenAI key needed)
+        LLM_BACKEND         = 'stub'
+        VECTOR_STORE_BACKEND = 'memory'
+        JWT_SECRET          = 'ci-test-secret-do-not-use-in-prod'
+
+        // Eval thresholds (lowered for stub CI — raise for real evaluations)
+        EVAL_GROUNDEDNESS_THRESHOLD = '0.0'
+        EVAL_CITATION_THRESHOLD     = '0.0'
+    }
+
+    options {
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+        timeout(time: 30, unit: 'MINUTES')
+        timestamps()
+        disableConcurrentBuilds()
+    }
+
+    stages {
+
+        // ----------------------------------------------------------------
+        // Stage 1 — Checkout
+        // ----------------------------------------------------------------
+        stage('Checkout') {
+            steps {
+                echo '🔄 Checking out source code...'
+                checkout scm
+                script {
+                    env.GIT_BRANCH = sh(script: 'git rev-parse --abbrev-ref HEAD', returnStdout: true).trim()
+                    echo "Branch : ${env.GIT_BRANCH}"
+                    echo "Commit : ${env.GIT_COMMIT_SHORT}"
+                }
+            }
+        }
+
+        // ----------------------------------------------------------------
+        // Stage 2 — Lint
+        // ----------------------------------------------------------------
+        stage('Lint') {
+            steps {
+                echo '📝 Running ruff linter...'
+                dir('llmops-rag-gateway') {
+                    sh '''
+                        python3 -m pip install --quiet ruff
+                        ruff check app/ eval/ scripts/ tests/
+                    '''
+                }
+            }
+        }
+
+        // ----------------------------------------------------------------
+        // Stage 3 — Tests (parallel)
+        // ----------------------------------------------------------------
+        stage('Test') {
+            parallel {
+
+                stage('Unit & Integration Tests') {
+                    steps {
+                        echo '🧪 Running pytest suite (stub mode)...'
+                        dir('llmops-rag-gateway') {
+                            sh '''
+                                python3 -m pip install --quiet -r requirements.txt
+                                pytest tests/ \
+                                    -v \
+                                    --tb=short \
+                                    --junitxml=test-results.xml \
+                                    --cov=app \
+                                    --cov-report=xml:coverage.xml \
+                                    --cov-fail-under=60
+                            '''
+                        }
+                    }
+                    post {
+                        always {
+                            junit 'llmops-rag-gateway/test-results.xml'
+                        }
+                    }
+                }
+
+                stage('Dockerfile Lint') {
+                    steps {
+                        echo '📋 Linting Dockerfile with hadolint...'
+                        dir('llmops-rag-gateway') {
+                            sh 'docker run --rm -i hadolint/hadolint < Dockerfile || true'
+                        }
+                    }
+                }
+            }
+        }
+
+        // ----------------------------------------------------------------
+        // Stage 4 — Eval Gate (LLM quality regression check)
+        // ----------------------------------------------------------------
+        stage('Eval Gate') {
+            steps {
+                echo '🔍 Running LLM eval harness (groundedness + citation + refusal)...'
+                dir('llmops-rag-gateway') {
+                    sh '''
+                        python3 -m pip install --quiet httpx
+
+                        # Start the gateway in background (stub mode)
+                        uvicorn app.main:app --host 0.0.0.0 --port 8001 &
+                        GW_PID=$!
+                        sleep 4
+
+                        # Health check
+                        curl -sf http://localhost:8001/health || (kill $GW_PID; exit 1)
+
+                        # Generate a short-lived eval token
+                        EVAL_TOKEN=$(python3 scripts/generate_token.py --sub ci-eval --ttl 300)
+
+                        # Run eval harness — exits 1 if quality below threshold
+                        python3 eval/run_eval.py \
+                            --gateway-url http://localhost:8001 \
+                            --token "$EVAL_TOKEN"
+
+                        kill $GW_PID || true
+                    '''
+                }
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: 'llmops-rag-gateway/eval/results/metrics.csv',
+                                     allowEmptyArchive: true
+                }
+            }
+        }
+
+        // ----------------------------------------------------------------
+        // Stage 5 — Security Scan
+        // ----------------------------------------------------------------
+        stage('Security Scan') {
+            steps {
+                echo '🔒 Building image for Trivy scan...'
+                dir('llmops-rag-gateway') {
+                    sh """
+                        docker build -t ${APP_NAME}:scan-${IMAGE_TAG} .
+
+                        # Install Trivy if not present
+                        if ! command -v trivy &> /dev/null; then
+                            curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+                        fi
+
+                        trivy image \
+                            --severity HIGH,CRITICAL \
+                            --exit-code 0 \
+                            --no-progress \
+                            ${APP_NAME}:scan-${IMAGE_TAG}
+
+                        docker rmi ${APP_NAME}:scan-${IMAGE_TAG} || true
+                    """
+                }
+            }
+        }
+
+        // ----------------------------------------------------------------
+        // Stage 6 — Docker Build & Push to ECR
+        //          (only on main / feature/llmops-rag-gateway branches)
+        // ----------------------------------------------------------------
+        stage('Docker Build & Push') {
+            when {
+                anyOf {
+                    branch 'main'
+                    branch 'master'
+                    branch 'feature/llmops-rag-gateway'
+                }
+            }
+            steps {
+                echo '🏗️ Building and pushing Docker image to ECR...'
+                dir('llmops-rag-gateway') {
+                    sh """
+                        # ECR login (IRSA — no hardcoded creds)
+                        aws ecr get-login-password --region ${AWS_REGION} | \
+                            docker login --username AWS --password-stdin \
+                            ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
+
+                        # Build
+                        docker build \
+                            --build-arg BUILD_DATE=\$(date -u +'%Y-%m-%dT%H:%M:%SZ') \
+                            --build-arg VCS_REF=${GIT_COMMIT_SHORT} \
+                            --build-arg VERSION=${IMAGE_TAG} \
+                            -t ${ECR_REPOSITORY}:${IMAGE_TAG} \
+                            -t ${ECR_REPOSITORY}:latest \
+                            .
+
+                        # Push
+                        docker push ${ECR_REPOSITORY}:${IMAGE_TAG}
+                        docker push ${ECR_REPOSITORY}:latest
+
+                        echo "✅ Pushed: ${ECR_REPOSITORY}:${IMAGE_TAG}"
+                    """
+                }
+            }
+        }
+
+        // ----------------------------------------------------------------
+        // Stage 7 — Update GitOps Repo (ArgoCD auto-sync)
+        // ----------------------------------------------------------------
+        stage('Update GitOps Repo') {
+            when {
+                anyOf {
+                    branch 'main'
+                    branch 'master'
+                }
+            }
+            steps {
+                echo '🔄 Updating GitOps repo — ArgoCD will deploy...'
+                withCredentials([usernamePassword(
+                    credentialsId: 'github-credentials',
+                    usernameVariable: 'GIT_USER',
+                    passwordVariable: 'GIT_TOKEN'
+                )]) {
+                    sh """
+                        git clone https://${GIT_TOKEN}@github.com/shafivullashaik-tech-ops/gitops-eks-platform.git /tmp/gitops-$$
+                        cd /tmp/gitops-$$
+
+                        ENV="dev"
+                        if [ "${GIT_BRANCH}" = "main" ]; then ENV="prod"; fi
+
+                        sed -i 's|llm-gateway:.*|llm-gateway:${IMAGE_TAG}|' \
+                            environments/\${ENV}/values.yaml
+
+                        git config user.name  "Jenkins CI"
+                        git config user.email "jenkins@llmops"
+                        git add environments/\${ENV}/values.yaml
+                        git commit -m "chore: update llm-gateway to ${IMAGE_TAG}" || true
+                        git push origin main
+
+                        rm -rf /tmp/gitops-$$
+                    """
+                }
+                echo "✅ GitOps updated — ArgoCD will sync automatically"
+            }
+        }
+
+        // ----------------------------------------------------------------
+        // Stage 8 — Notify
+        // ----------------------------------------------------------------
+        stage('Notify') {
+            steps {
+                script {
+                    def status = currentBuild.currentResult
+                    def icon   = status == 'SUCCESS' ? '✅' : '❌'
+                    echo """
+                        ${icon} Build ${currentBuild.fullDisplayName}
+                        Status  : ${status}
+                        Branch  : ${env.GIT_BRANCH}
+                        Commit  : ${env.GIT_COMMIT_SHORT}
+                        Image   : ${ECR_REPOSITORY}:${IMAGE_TAG}
+                        Duration: ${currentBuild.durationString}
+                    """
+                    // Uncomment to enable Slack:
+                    // slackSend channel: '#llmops', color: status == 'SUCCESS' ? 'good' : 'danger',
+                    //           message: "${icon} llm-gateway ${IMAGE_TAG} — ${status}"
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            echo '🧹 Cleaning up Docker images...'
+            sh """
+                docker rmi ${ECR_REPOSITORY}:${IMAGE_TAG} || true
+                docker rmi ${ECR_REPOSITORY}:latest || true
+                docker system prune -f || true
+            """
+            cleanWs()
+        }
+        success { echo '✅ Pipeline completed successfully!' }
+        failure { echo '❌ Pipeline failed — check logs above.' }
+    }
+}

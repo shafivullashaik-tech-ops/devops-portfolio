@@ -1,0 +1,182 @@
+{
+  "__inputs": [],
+  "__requires": [],
+  "annotations": { "list": [] },
+  "description": "LLM Gateway — Token Usage, Request Latency (p95), Rate Limits, Guardrails",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 1,
+      "title": "Request Traffic",
+      "type": "row"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "unit": "reqps" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 1 },
+      "id": 2,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "single" } },
+      "targets": [
+        {
+          "expr": "sum(rate(llm_request_total[1m])) by (route)",
+          "legendFormat": "{{route}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Request Rate (req/s) by Route",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "unit": "s" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 1 },
+      "id": 3,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "single" } },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(llm_request_latency_seconds_bucket[5m])) by (le, route))",
+          "legendFormat": "p95 {{route}}",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(llm_request_latency_seconds_bucket[5m])) by (le, route))",
+          "legendFormat": "p50 {{route}}",
+          "refId": "B"
+        }
+      ],
+      "title": "Request Latency — p50 / p95",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 },
+      "id": 10,
+      "title": "Token Usage & Cost",
+      "type": "row"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "unit": "short" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 10 },
+      "id": 4,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "single" } },
+      "targets": [
+        {
+          "expr": "sum(rate(llm_token_usage_total[5m])) by (model, type)",
+          "legendFormat": "{{model}} / {{type}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Token Usage Rate (tokens/s) by Model & Type",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "unit": "short" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 10 },
+      "id": 5,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "single" } },
+      "targets": [
+        {
+          "expr": "sum(increase(llm_token_usage_total[1h])) by (model)",
+          "legendFormat": "{{model}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Total Tokens (last 1h) — Cost Proxy",
+      "type": "stat"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 18 },
+      "id": 20,
+      "title": "Guardrails & Errors",
+      "type": "row"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "fixed", "fixedColor": "red" }, "unit": "short" },
+        "overrides": []
+      },
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 19 },
+      "id": 6,
+      "options": { "colorMode": "background", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        {
+          "expr": "sum(increase(llm_guardrail_blocks_total[5m])) by (block_type)",
+          "legendFormat": "{{block_type}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Guardrail Blocks (5m)",
+      "type": "stat"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "fixed", "fixedColor": "orange" }, "unit": "short" },
+        "overrides": []
+      },
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 19 },
+      "id": 7,
+      "options": { "colorMode": "background", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        {
+          "expr": "sum(rate(llm_request_total{status=~\"4..|5..\"}[5m]))",
+          "legendFormat": "error rate",
+          "refId": "A"
+        }
+      ],
+      "title": "HTTP Error Rate (4xx/5xx)",
+      "type": "stat"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "unit": "short" },
+        "overrides": []
+      },
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 19 },
+      "id": 8,
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        {
+          "expr": "llm_vector_store_chunks",
+          "legendFormat": "chunks",
+          "refId": "A"
+        }
+      ],
+      "title": "Vector Store Size (chunks)",
+      "type": "stat"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["llmops", "rag", "gateway"],
+  "templating": { "list": [] },
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "LLM Gateway — Overview",
+  "uid": "llm-gateway-v1",
+  "version": 1
+}

@@ -1,0 +1,125 @@
+# =============================================================================
+# LLM Ops RAG Gateway — Full local stack
+#
+# Services:
+#   gateway      — FastAPI LLM Gateway (port 8000)
+#   postgres     — PostgreSQL + pgvector (port 5432)
+#   prometheus   — Metrics scraper (port 9090)
+#   grafana      — Dashboards (port 3000)
+#
+# Quick start:
+#   docker compose up -d
+#   TOKEN=$(python scripts/generate_token.py)
+#   curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/health
+# =============================================================================
+
+version: "3.9"
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # LLM Gateway
+  # ---------------------------------------------------------------------------
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: llm-gateway
+    ports:
+      - "8000:8000"
+    environment:
+      - LLM_BACKEND=${LLM_BACKEND:-stub}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - JWT_SECRET=${JWT_SECRET:-super-secret-change-in-production}
+      - JWT_ALGORITHM=HS256
+      - VECTOR_STORE_BACKEND=${VECTOR_STORE_BACKEND:-pgvector}
+      - DATABASE_URL=postgresql://rag:rag@postgres:5432/ragdb
+      - EMBEDDING_DIM=1536
+      - CHUNK_SIZE=512
+      - CHUNK_OVERLAP=64
+      - RATE_CHAT_MAX=20
+      - RATE_RAG_MAX=10
+      - LOG_FORMAT=json
+      - LOG_LEVEL=INFO
+      - RESPONSE_CACHE_ENABLED=true
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - llmops
+
+  # ---------------------------------------------------------------------------
+  # PostgreSQL + pgvector
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: llm-postgres
+    environment:
+      POSTGRES_USER: rag
+      POSTGRES_PASSWORD: rag
+      POSTGRES_DB: ragdb
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rag -d ragdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - llmops
+
+  # ---------------------------------------------------------------------------
+  # Prometheus
+  # ---------------------------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    container_name: llm-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - promdata:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=7d"
+      - "--web.enable-lifecycle"
+    networks:
+      - llmops
+
+  # ---------------------------------------------------------------------------
+  # Grafana
+  # ---------------------------------------------------------------------------
+  grafana:
+    image: grafana/grafana:10.3.3
+    container_name: llm-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+    volumes:
+      - grafdata:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboard.json:/var/lib/grafana/dashboards/llm-gateway.json:ro
+    depends_on:
+      - prometheus
+    networks:
+      - llmops
+
+volumes:
+  pgdata:
+  promdata:
+  grafdata:
+
+networks:
+  llmops:
+    driver: bridge
