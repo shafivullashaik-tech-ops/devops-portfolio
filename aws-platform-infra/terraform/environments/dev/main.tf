@@ -114,7 +114,7 @@ module "eks" {
 }
 
 ################################################################################
-# ECR Module
+# ECR Module — demo-app
 ################################################################################
 
 module "ecr" {
@@ -131,6 +131,27 @@ module "ecr" {
   allowed_pull_principals = []
 
   tags = local.common_tags
+}
+
+################################################################################
+# ECR Module — llm-gateway (LLMOps RAG Gateway)
+################################################################################
+
+module "ecr_llm_gateway" {
+  source = "../../../../terraform-aws-modules/ecr"
+
+  repository_name        = "llm-gateway"
+  image_tag_mutability   = "MUTABLE"
+  scan_on_push           = true
+  encryption_type        = "AES256"
+  image_retention_count  = 10
+
+  # EKS nodes pull the image via IRSA / node IAM role
+  allowed_pull_principals = []
+
+  tags = merge(local.common_tags, {
+    Service = "llmops-rag-gateway"
+  })
 }
 
 ################################################################################
@@ -191,7 +212,11 @@ resource "aws_iam_role_policy" "jenkins_ecr_policy" {
           "ecr:CompleteLayerUpload",
           "ecr:PutImage"
         ]
-        Resource = module.ecr.repository_arn
+        # Allow Jenkins to push to ALL ECR repos in this account
+        Resource = [
+          module.ecr.repository_arn,
+          module.ecr_llm_gateway.repository_arn,
+        ]
       },
       {
         Sid    = "EKSDescribe"

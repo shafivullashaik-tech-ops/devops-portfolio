@@ -9,6 +9,9 @@
 #
 # ArgoCD will then auto-sync k8s/ manifests to the EKS cluster.
 # Image tag is updated by Jenkins (Jenkinsfile Stage 7 — Update GitOps Repo).
+#
+# NOTE: targetRevision is set to feature/llmops-rag-gateway for testing.
+# Change to "main" after PR is merged.
 # =============================================================================
 
 apiVersion: argoproj.io/v1alpha1
@@ -26,7 +29,7 @@ spec:
 
   source:
     repoURL: https://github.com/shafivullashaik-tech-ops/devops-portfolio.git
-    targetRevision: main
+    targetRevision: feature/llmops-rag-gateway
     path: llmops-rag-gateway/k8s
 
   destination:

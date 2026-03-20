@@ -144,11 +144,12 @@ spec:
             periodSeconds: 10
             failureThreshold: 3
 
-      # Spread across AZs for HA
+      # Spread across AZs for HA — use ScheduleAnyway for dev (2-node cluster)
+      # Change to DoNotSchedule in production with 3+ nodes across 3 AZs
       topologySpreadConstraints:
         - maxSkew: 1
           topologyKey: topology.kubernetes.io/zone
-          whenUnsatisfiable: DoNotSchedule
+          whenUnsatisfiable: ScheduleAnyway
           labelSelector:
             matchLabels:
               app: llm-gateway
