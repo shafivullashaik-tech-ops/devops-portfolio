@@ -178,11 +178,4 @@ module "iam" {
   tags = local.common_tags
 }
 
-################################################################################
-# Import existing node group (already in AWS — remove after first apply)
-################################################################################
-
-import {
-  to = module.eks.aws_eks_node_group.main["general"]
-  id = "portfolio-eks-dev:portfolio-eks-dev-general"
-}
+# Import block removed — node group already destroyed
