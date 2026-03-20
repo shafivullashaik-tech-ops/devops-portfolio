@@ -1,0 +1,230 @@
+// =============================================================================
+// Infrastructure Pipeline — Terraform (AWS Platform)
+//
+// Runs BEFORE the app pipeline (llmops-rag-gateway/Jenkinsfile).
+// Creates/updates: VPC, EKS, ECR repos, IAM roles (IRSA)
+//
+// Stages:
+//   1. Checkout
+//   2. Terraform Init
+//   3. Terraform Validate + Format check
+//   4. Terraform Plan  (always runs — saves plan artifact)
+//   5. Approval Gate  (manual approval on main branch)
+//   6. Terraform Apply (main/feature branch only)
+//   7. Output Summary  (ECR URLs, cluster name, IRSA ARNs)
+// =============================================================================
+
+pipeline {
+    agent any
+
+    environment {
+        AWS_REGION       = 'us-west-2'
+        AWS_ACCOUNT_ID   = '050451393596'
+        TF_DIR           = 'aws-platform-infra/terraform/environments/dev'
+        TF_VAR_FILE      = 'terraform.tfvars'
+
+        // Use profile 'shafi' for local; Jenkins uses IRSA (no profile needed on EKS)
+        AWS_DEFAULT_REGION = 'us-west-2'
+    }
+
+    options {
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+        timeout(time: 45, unit: 'MINUTES')
+        timestamps()
+        disableConcurrentBuilds()
+    }
+
+    stages {
+
+        // ----------------------------------------------------------------
+        // Stage 1 — Checkout
+        // ----------------------------------------------------------------
+        stage('Checkout') {
+            steps {
+                echo '🔄 Checking out source code...'
+                checkout scm
+                script {
+                    env.GIT_BRANCH     = sh(script: 'git rev-parse --abbrev-ref HEAD', returnStdout: true).trim()
+                    env.GIT_COMMIT_SHORT = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
+                    echo "Branch : ${env.GIT_BRANCH}"
+                    echo "Commit : ${env.GIT_COMMIT_SHORT}"
+                }
+            }
+        }
+
+        // ----------------------------------------------------------------
+        // Stage 2 — Terraform Init
+        // ----------------------------------------------------------------
+        stage('Terraform Init') {
+            steps {
+                echo '⚙️ Initialising Terraform...'
+                dir("${TF_DIR}") {
+                    sh '''
+                        terraform version
+                        terraform init -upgrade -reconfigure
+                    '''
+                }
+            }
+        }
+
+        // ----------------------------------------------------------------
+        // Stage 3 — Validate + Format
+        // ----------------------------------------------------------------
+        stage('Validate') {
+            parallel {
+                stage('terraform validate') {
+                    steps {
+                        dir("${TF_DIR}") {
+                            sh 'terraform validate'
+                        }
+                    }
+                }
+                stage('terraform fmt') {
+                    steps {
+                        dir("${TF_DIR}") {
+                            sh 'terraform fmt -check -recursive ../../../../terraform-aws-modules/ || true'
+                        }
+                    }
+                }
+            }
+        }
+
+        // ----------------------------------------------------------------
+        // Stage 4 — Terraform Plan
+        //           Always runs so you can review before applying
+        // ----------------------------------------------------------------
+        stage('Terraform Plan') {
+            steps {
+                echo '📋 Running terraform plan...'
+                dir("${TF_DIR}") {
+                    sh '''
+                        terraform plan \
+                            -var-file="${TF_VAR_FILE}" \
+                            -out=tfplan \
+                            -detailed-exitcode || true
+
+                        # Save human-readable plan for review
+                        terraform show -no-color tfplan > tfplan.txt
+                        echo "===== PLAN SUMMARY ====="
+                        cat tfplan.txt
+                    '''
+                }
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: "${TF_DIR}/tfplan.txt",
+                                     allowEmptyArchive: true
+                }
+            }
+        }
+
+        // ----------------------------------------------------------------
+        // Stage 5 — Manual Approval Gate (main branch only)
+        // ----------------------------------------------------------------
+        stage('Approval') {
+            when {
+                anyOf {
+                    branch 'main'
+                    branch 'master'
+                }
+            }
+            steps {
+                script {
+                    def plan = readFile("${TF_DIR}/tfplan.txt").take(3000)
+                    input message: """
+                        🔍 Review Terraform Plan Before Applying to AWS
+
+                        Branch : ${env.GIT_BRANCH}
+                        Commit : ${env.GIT_COMMIT_SHORT}
+
+                        Plan (first 3000 chars):
+                        ${plan}
+
+                        Do you approve applying this plan?
+                    """,
+                    ok: '✅ Yes — Apply',
+                    submitter: 'admin'
+                }
+            }
+        }
+
+        // ----------------------------------------------------------------
+        // Stage 6 — Terraform Apply
+        //           Runs on main and feature branches (for testing)
+        // ----------------------------------------------------------------
+        stage('Terraform Apply') {
+            when {
+                anyOf {
+                    branch 'main'
+                    branch 'master'
+                    branch 'feature/llmops-rag-gateway'
+                }
+            }
+            steps {
+                echo '🚀 Applying Terraform changes...'
+                dir("${TF_DIR}") {
+                    sh '''
+                        terraform apply -auto-approve tfplan
+                        echo "✅ Terraform apply complete"
+                    '''
+                }
+            }
+        }
+
+        // ----------------------------------------------------------------
+        // Stage 7 — Output Summary
+        // ----------------------------------------------------------------
+        stage('Output Summary') {
+            when {
+                anyOf {
+                    branch 'main'
+                    branch 'master'
+                    branch 'feature/llmops-rag-gateway'
+                }
+            }
+            steps {
+                echo '📊 Collecting Terraform outputs...'
+                dir("${TF_DIR}") {
+                    sh '''
+                        echo ""
+                        echo "=========================================="
+                        echo "  INFRASTRUCTURE OUTPUTS"
+                        echo "=========================================="
+                        terraform output 2>/dev/null || true
+                        echo ""
+                        echo "ECR Repositories:"
+                        aws ecr describe-repositories \
+                            --region ${AWS_REGION} \
+                            --query "repositories[?contains(repositoryName, 'llm-gateway') || contains(repositoryName, 'demo-app')].repositoryUri" \
+                            --output table 2>/dev/null || true
+                        echo ""
+                        echo "IAM Roles created:"
+                        aws iam list-roles \
+                            --query "Roles[?contains(RoleName, 'portfolio-eks-dev')].{Name:RoleName,ARN:Arn}" \
+                            --output table 2>/dev/null || true
+                        echo "=========================================="
+                    '''
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            echo '🧹 Cleaning up workspace...'
+            // Remove tfplan binary (contains secrets) — keep .txt for audit
+            sh "rm -f ${TF_DIR}/tfplan || true"
+            cleanWs(
+                deleteDirs: true,
+                patterns: [[pattern: '**/.terraform/**', type: 'INCLUDE']]
+            )
+        }
+        success {
+            echo '''✅ Infra pipeline complete!
+Next step: Run the app pipeline (llmops-rag-gateway/Jenkinsfile)'''
+        }
+        failure {
+            echo '❌ Infra pipeline failed — check Terraform plan output above.'
+        }
+    }
+}
