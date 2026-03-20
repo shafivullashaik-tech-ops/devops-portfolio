@@ -13,8 +13,11 @@ import jwt
 import time
 import os
 
-os.environ.setdefault("LLM_BACKEND", "stub")
-os.environ.setdefault("VECTOR_STORE_BACKEND", "memory")
+# Force test values BEFORE importing app (overrides any env vars passed at CLI)
+os.environ["LLM_BACKEND"] = "stub"
+os.environ["VECTOR_STORE_BACKEND"] = "memory"
+os.environ["JWT_SECRET"] = "super-secret-change-in-production"
+os.environ["JWT_ALGORITHM"] = "HS256"
 
 from fastapi.testclient import TestClient
 from app.main import app

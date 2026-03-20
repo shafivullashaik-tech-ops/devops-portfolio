@@ -12,8 +12,11 @@ import jwt
 import time
 import os
 
-os.environ.setdefault("LLM_BACKEND", "stub")
-os.environ.setdefault("VECTOR_STORE_BACKEND", "memory")
+# Force test values BEFORE importing app (overrides any env vars passed at CLI)
+os.environ["LLM_BACKEND"] = "stub"
+os.environ["VECTOR_STORE_BACKEND"] = "memory"
+os.environ["JWT_SECRET"] = "super-secret-change-in-production"
+os.environ["JWT_ALGORITHM"] = "HS256"
 
 from fastapi.testclient import TestClient
 from app.main import app
@@ -92,24 +95,47 @@ def test_legitimate_message_passes(client):
     assert resp.status_code == 200, f"Legitimate message was blocked: {resp.text}"
 
 
-def test_pii_email_in_message_passes_but_redacted(client):
+def test_pii_email_in_message_passes_but_redacted(client, caplog):
     """
-    A message containing an email should pass through (not blocked),
-    but the email should be redacted before reaching the LLM.
-    We verify this by checking the stub reply does NOT echo the raw email.
+    A message containing an email should:
+    1. NOT be blocked (email ≠ injection pattern) → 200
+    2. Guardrail middleware logs 'guardrail_pii_redacted'
+    3. The redacted form '[EMAIL REDACTED]' appears in the stub reply
+       (stub echoes what it receives AFTER redaction)
+
+    Note: Starlette BaseHTTPMiddleware replaces the body at ASGI level.
+    FastAPI/Pydantic re-reads from the patched receive channel, so the
+    redacted body IS used by the router. The stub echoes the redacted text.
     """
+    import logging
     token = make_token()
-    resp = client.post(
-        "/chat",
-        json={"message": "My email is john.doe@example.com, can you help?"},
-        headers={"Authorization": f"Bearer {token}"},
-    )
-    # Should NOT be blocked (email ≠ injection)
+
+    with caplog.at_level(logging.INFO, logger="app.middleware.guardrails"):
+        resp = client.post(
+            "/chat",
+            json={"message": "My email is john.doe@example.com, can you help?"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+    # 1. Must not be blocked
     assert resp.status_code == 200, resp.text
-    # Stub echoes back what it received — the raw email must NOT appear
+
     reply = resp.json()["reply"]
-    assert "john.doe@example.com" not in reply, (
-        "PII email leaked into LLM response — redaction failed!"
+
+    # 2. Verify PII redaction was triggered in the middleware
+    pii_was_redacted = "guardrail_pii_redacted" in caplog.text
+
+    # 3. If redaction worked end-to-end, stub echoes [EMAIL REDACTED]
+    #    If middleware body-patching works → email NOT in reply
+    #    Either way, the middleware MUST have flagged it
+    assert pii_was_redacted, (
+        "Expected guardrail_pii_redacted log entry — middleware did not detect PII!"
+    )
+
+    # Verify the reply contains the redacted form (not the raw email)
+    assert "[EMAIL REDACTED]" in reply, (
+        f"Expected '[EMAIL REDACTED]' in stub reply. Got: {reply}\n"
+        "This means the redacted body was successfully passed to the LLM."
     )
 
 

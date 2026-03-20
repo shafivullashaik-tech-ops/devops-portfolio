@@ -1,20 +1,23 @@
 """
-Guardrails middleware — applied before request hits any router.
+Guardrails middleware — pure ASGI middleware (not BaseHTTPMiddleware).
+
+Using pure ASGI avoids the known Starlette BaseHTTPMiddleware limitation where
+body replacement via a custom receive() callable is consumed by the middleware
+layer and NOT forwarded to the downstream FastAPI route handler.
+
+A pure ASGI middleware intercepts the receive() channel at the ASGI level,
+so FastAPI's body parser receives the MODIFIED (redacted) bytes directly.
 
 Defenses:
-  1. Prompt-injection detection  — deny requests containing known injection patterns
-  2. PII redaction               — mask emails and phone numbers in request body
+  1. Prompt-injection detection  — deny requests containing known patterns (400)
+  2. PII redaction               — mask emails and phone numbers before LLM sees them
   3. Tool/instruction allowlisting — block attempts to invoke disallowed operations
-
-Only applies to routes with a JSON body (POST /chat, POST /rag/chat).
 """
 
 import re
 import json
 import logging
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.requests import Request
-from starlette.responses import JSONResponse
+from typing import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -49,8 +52,8 @@ PHONE_RE = re.compile(
     r"(\+?\d{1,3}[\s\-]?)?(\(?\d{3}\)?[\s\-]?)(\d{3}[\s\-]?\d{4})"
 )
 
-# Routes that get guardrail inspection
-GUARDED_PATHS = {"/chat", "/rag/chat"}
+# Routes that get guardrail inspection (path prefixes)
+GUARDED_PATHS = ("/chat", "/rag/chat")
 
 
 def _detect_injection(text: str) -> bool:
@@ -63,54 +66,95 @@ def _redact_pii(text: str) -> str:
     return text
 
 
-class GuardrailsMiddleware(BaseHTTPMiddleware):
+def _json_400(detail: str, code: str) -> bytes:
+    return json.dumps({"detail": detail, "code": code}).encode()
+
+
+class GuardrailsMiddleware:
     """
+    Pure ASGI middleware.
+
     Intercepts POST requests to guarded routes:
     - Blocks prompt injections (returns 400)
-    - Redacts PII from the request body before forwarding
+    - Redacts PII from the request body before forwarding to FastAPI
     """
 
-    async def dispatch(self, request: Request, call_next):
-        path = request.url.path
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        method = scope.get("method", "")
+        path = scope.get("path", "")
 
         # Only inspect guarded POST routes
-        if request.method == "POST" and any(path.startswith(g) for g in GUARDED_PATHS):
-            try:
-                raw_body = await request.body()
-                body_str = raw_body.decode("utf-8", errors="replace")
+        if method == "POST" and any(path.startswith(g) for g in GUARDED_PATHS):
+            # --- Collect the full body from the receive channel ---
+            body_chunks = []
+            more_body = True
+            while more_body:
+                message = await receive()
+                body_chunks.append(message.get("body", b""))
+                more_body = message.get("more_body", False)
 
-                # --- Injection detection ---
-                if _detect_injection(body_str):
-                    logger.warning(
-                        "guardrail_injection_blocked path=%s snippet=%.100s",
-                        path,
-                        body_str,
-                    )
-                    return JSONResponse(
-                        status_code=400,
-                        content={
-                            "detail": "Request blocked by guardrails: potential prompt injection detected.",
-                            "code": "INJECTION_BLOCKED",
-                        },
-                    )
+            raw_body = b"".join(body_chunks)
+            body_str = raw_body.decode("utf-8", errors="replace")
 
-                # --- PII redaction ---
-                redacted_str = _redact_pii(body_str)
-                if redacted_str != body_str:
-                    logger.info("guardrail_pii_redacted path=%s", path)
+            # --- Injection detection ---
+            if _detect_injection(body_str):
+                logger.warning(
+                    "guardrail_injection_blocked path=%s snippet=%.100s",
+                    path,
+                    body_str,
+                )
+                response_body = _json_400(
+                    "Request blocked by guardrails: potential prompt injection detected.",
+                    "INJECTION_BLOCKED",
+                )
+                await send({
+                    "type": "http.response.start",
+                    "status": 400,
+                    "headers": [
+                        [b"content-type", b"application/json"],
+                        [b"content-length", str(len(response_body)).encode()],
+                    ],
+                })
+                await send({
+                    "type": "http.response.body",
+                    "body": response_body,
+                    "more_body": False,
+                })
+                return
 
-                # Reconstruct request with redacted body
-                async def receive():
+            # --- PII redaction ---
+            redacted_str = _redact_pii(body_str)
+            if redacted_str != body_str:
+                logger.info("guardrail_pii_redacted path=%s", path)
+
+            redacted_body = redacted_str.encode("utf-8")
+
+            # --- Replace the receive channel with redacted body ---
+            # This is the key: provide a new async callable that yields
+            # the modified body. FastAPI will read from this directly.
+            body_sent = False
+
+            async def patched_receive():
+                nonlocal body_sent
+                if not body_sent:
+                    body_sent = True
                     return {
                         "type": "http.request",
-                        "body": redacted_str.encode("utf-8"),
+                        "body": redacted_body,
                         "more_body": False,
                     }
+                # Disconnect after body consumed
+                return {"type": "http.disconnect"}
 
-                request = Request(request.scope, receive=receive)
+            await self.app(scope, patched_receive, send)
+            return
 
-            except Exception as exc:
-                logger.error("guardrails_error: %s", exc)
-                # On guardrail error, pass through (fail open — log but don't block)
-
-        return await call_next(request)
+        # Non-guarded route — pass through unchanged
+        await self.app(scope, receive, send)
