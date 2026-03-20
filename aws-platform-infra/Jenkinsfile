@@ -15,40 +15,9 @@
 // =============================================================================
 
 pipeline {
-    // Use a Kubernetes pod with Terraform + AWS CLI pre-installed
-    // This avoids needing to install terraform at runtime on a minimal agent
-    agent {
-        kubernetes {
-            label 'terraform-agent'
-            defaultContainer 'terraform'
-            yaml """
-apiVersion: v1
-kind: Pod
-spec:
-  serviceAccountName: jenkins
-  containers:
-  - name: terraform
-    image: hashicorp/terraform:1.7.5
-    command: ['cat']
-    tty: true
-    resources:
-      requests:
-        cpu: "500m"
-        memory: "512Mi"
-      limits:
-        cpu: "1000m"
-        memory: "1Gi"
-  - name: aws-cli
-    image: amazon/aws-cli:2.15.30
-    command: ['cat']
-    tty: true
-    resources:
-      requests:
-        cpu: "200m"
-        memory: "256Mi"
-"""
-        }
-    }
+    // Use the default Jenkins agent (already running — no new pod needed)
+    // Terraform is installed at Stage 2 via direct binary download (no apt/yum needed)
+    agent any
 
     environment {
         AWS_REGION         = 'us-west-2'
@@ -56,8 +25,9 @@ spec:
         TF_DIR             = 'aws-platform-infra/terraform/environments/dev'
         TF_VAR_FILE        = 'terraform.tfvars'
         AWS_DEFAULT_REGION = 'us-west-2'
-        // Disable AWS CLI profile (Jenkins uses IRSA on EKS)
         AWS_SDK_LOAD_CONFIG = '0'
+        // Install terraform to workspace (no root needed)
+        TF_BIN             = '/tmp/terraform'
     }
 
     options {
@@ -86,17 +56,40 @@ spec:
         }
 
         // ----------------------------------------------------------------
-        // Stage 2 — Terraform Init
-        //           Using hashicorp/terraform:1.7.5 container (already has terraform)
+        // Stage 2 — Install Terraform + Init
+        //           Downloads binary to /tmp — no root, no apt/yum needed
+        //           Uses python3 for unzipping (available on Jenkins controller)
         // ----------------------------------------------------------------
         stage('Terraform Init') {
             steps {
-                echo '⚙️ Initialising Terraform...'
-                sh 'terraform version'
+                echo '⚙️ Installing Terraform and initialising...'
+                sh '''
+                    TF_BIN=/tmp/tf-bin/terraform
+                    mkdir -p /tmp/tf-bin
+
+                    if [ ! -f "$TF_BIN" ]; then
+                        echo "Downloading Terraform 1.7.5..."
+                        curl -sLo /tmp/terraform.zip \
+                            https://releases.hashicorp.com/terraform/1.7.5/terraform_1.7.5_linux_amd64.zip
+
+                        # Unzip using python3 (no system unzip needed)
+                        python3 -c "
+import zipfile, sys
+with zipfile.ZipFile('/tmp/terraform.zip') as z:
+    z.extractall('/tmp/tf-bin')
+"
+                        chmod +x $TF_BIN
+                        rm /tmp/terraform.zip
+                    fi
+
+                    export PATH="/tmp/tf-bin:$PATH"
+                    terraform version
+                '''
                 dir("${TF_DIR}") {
                     sh '''
-                        # Remove profile setting — Jenkins uses IRSA (no AWS profile needed)
-                        sed -i 's/profile.*=.*"shafi"//g' main.tf 2>/dev/null || true
+                        export PATH="/tmp/tf-bin:$PATH"
+                        # Strip AWS profile — Jenkins uses IRSA on EKS (no local profile)
+                        sed -i 's|profile.*=.*"shafi"||g' main.tf 2>/dev/null || true
                         terraform init -upgrade -reconfigure
                     '''
                 }
@@ -111,14 +104,14 @@ spec:
                 stage('terraform validate') {
                     steps {
                         dir("${TF_DIR}") {
-                            sh 'terraform validate'
+                            sh 'export PATH="/tmp/tf-bin:$PATH" && terraform validate'
                         }
                     }
                 }
                 stage('terraform fmt') {
                     steps {
                         dir("${TF_DIR}") {
-                            sh 'terraform fmt -check -recursive ../../../../terraform-aws-modules/ || true'
+                            sh 'export PATH="/tmp/tf-bin:$PATH" && terraform fmt -check -recursive ../../../../terraform-aws-modules/ || true'
                         }
                     }
                 }
@@ -134,6 +127,7 @@ spec:
                 echo '📋 Running terraform plan...'
                 dir("${TF_DIR}") {
                     sh '''
+                        export PATH="/tmp/tf-bin:$PATH"
                         terraform plan \
                             -var-file="${TF_VAR_FILE}" \
                             -out=tfplan \
@@ -200,6 +194,7 @@ spec:
                 echo '🚀 Applying Terraform changes...'
                 dir("${TF_DIR}") {
                     sh '''
+                        export PATH="/tmp/tf-bin:$PATH"
                         terraform apply -auto-approve tfplan
                         echo "✅ Terraform apply complete"
                     '''
