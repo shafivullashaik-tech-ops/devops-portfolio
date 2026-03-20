@@ -1,0 +1,179 @@
+# =============================================================================
+# LLM Gateway — Helm Default Values
+# Override per environment:
+#   helm upgrade --install llm-gateway ./helm -f helm/values-prod.yaml
+# =============================================================================
+
+replicaCount: 2
+
+image:
+  repository: 050451393596.dkr.ecr.us-west-2.amazonaws.com/llm-gateway
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# ---------------------------------------------------------------------------
+# Service Account — IRSA
+# ---------------------------------------------------------------------------
+serviceAccount:
+  create: true
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::050451393596:role/llm-gateway-irsa
+  name: ""
+
+# ---------------------------------------------------------------------------
+# Pod annotations — Prometheus auto-discovery
+# ---------------------------------------------------------------------------
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "8000"
+  prometheus.io/path: "/metrics"
+
+# ---------------------------------------------------------------------------
+# Security context — non-root (matches Dockerfile)
+# ---------------------------------------------------------------------------
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+
+securityContext:
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: false
+  allowPrivilegeEscalation: false
+
+# ---------------------------------------------------------------------------
+# Service
+# ---------------------------------------------------------------------------
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8000
+
+# ---------------------------------------------------------------------------
+# Ingress — AWS ALB (matches app-microservice-demo pattern)
+# ---------------------------------------------------------------------------
+ingress:
+  enabled: true
+  className: alb
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: "443"
+    alb.ingress.kubernetes.io/healthcheck-path: /health
+    alb.ingress.kubernetes.io/healthcheck-protocol: HTTP
+    alb.ingress.kubernetes.io/healthcheck-interval-seconds: "15"
+    alb.ingress.kubernetes.io/healthcheck-timeout-seconds: "5"
+    alb.ingress.kubernetes.io/healthy-threshold-count: "2"
+    alb.ingress.kubernetes.io/unhealthy-threshold-count: "2"
+  hosts:
+    - host: llm-gateway.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+# ---------------------------------------------------------------------------
+# Resources
+# ---------------------------------------------------------------------------
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+
+# ---------------------------------------------------------------------------
+# HPA
+# ---------------------------------------------------------------------------
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+# ---------------------------------------------------------------------------
+# Probes
+# ---------------------------------------------------------------------------
+livenessProbe:
+  httpGet:
+    path: /health
+    port: 8000
+  initialDelaySeconds: 15
+  periodSeconds: 20
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /health
+    port: 8000
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+# ---------------------------------------------------------------------------
+# Topology spread — HA across AZs
+# ---------------------------------------------------------------------------
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: DoNotSchedule
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: llm-gateway
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# ---------------------------------------------------------------------------
+# Application environment variables
+# ---------------------------------------------------------------------------
+env:
+  LLM_BACKEND: "openai"
+  LLM_MODEL: "gpt-3.5-turbo"
+  EMBEDDING_MODEL: "text-embedding-ada-002"
+  EMBEDDING_DIM: "1536"
+  JWT_ALGORITHM: "HS256"
+  VECTOR_STORE_BACKEND: "pgvector"
+  CHUNK_SIZE: "512"
+  CHUNK_OVERLAP: "64"
+  RATE_CHAT_MAX: "20"
+  RATE_RAG_MAX: "10"
+  LOG_FORMAT: "json"
+  LOG_LEVEL: "INFO"
+  RESPONSE_CACHE_ENABLED: "true"
+
+# ---------------------------------------------------------------------------
+# Secrets — reference a Kubernetes Secret (created separately)
+# kubectl create secret generic llm-gateway-secrets \
+#   --from-literal=openai-api-key=sk-... \
+#   --from-literal=jwt-secret=<strong> \
+#   --from-literal=database-url=postgresql://...
+# ---------------------------------------------------------------------------
+secretName: llm-gateway-secrets
+
+# ---------------------------------------------------------------------------
+# ServiceMonitor — Prometheus Operator integration
+# ---------------------------------------------------------------------------
+serviceMonitor:
+  enabled: true
+  interval: 15s
+  scrapeTimeout: 10s
+  labels:
+    release: kube-prometheus
+
+# ---------------------------------------------------------------------------
+# Namespace
+# ---------------------------------------------------------------------------
+namespace: llmops
