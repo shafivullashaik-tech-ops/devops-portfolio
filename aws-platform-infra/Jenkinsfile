@@ -15,16 +15,49 @@
 // =============================================================================
 
 pipeline {
-    agent any
+    // Use a Kubernetes pod with Terraform + AWS CLI pre-installed
+    // This avoids needing to install terraform at runtime on a minimal agent
+    agent {
+        kubernetes {
+            label 'terraform-agent'
+            defaultContainer 'terraform'
+            yaml """
+apiVersion: v1
+kind: Pod
+spec:
+  serviceAccountName: jenkins
+  containers:
+  - name: terraform
+    image: hashicorp/terraform:1.7.5
+    command: ['cat']
+    tty: true
+    resources:
+      requests:
+        cpu: "500m"
+        memory: "512Mi"
+      limits:
+        cpu: "1000m"
+        memory: "1Gi"
+  - name: aws-cli
+    image: amazon/aws-cli:2.15.30
+    command: ['cat']
+    tty: true
+    resources:
+      requests:
+        cpu: "200m"
+        memory: "256Mi"
+"""
+        }
+    }
 
     environment {
-        AWS_REGION       = 'us-west-2'
-        AWS_ACCOUNT_ID   = '050451393596'
-        TF_DIR           = 'aws-platform-infra/terraform/environments/dev'
-        TF_VAR_FILE      = 'terraform.tfvars'
-
-        // Use profile 'shafi' for local; Jenkins uses IRSA (no profile needed on EKS)
+        AWS_REGION         = 'us-west-2'
+        AWS_ACCOUNT_ID     = '050451393596'
+        TF_DIR             = 'aws-platform-infra/terraform/environments/dev'
+        TF_VAR_FILE        = 'terraform.tfvars'
         AWS_DEFAULT_REGION = 'us-west-2'
+        // Disable AWS CLI profile (Jenkins uses IRSA on EKS)
+        AWS_SDK_LOAD_CONFIG = '0'
     }
 
     options {
@@ -53,30 +86,18 @@ pipeline {
         }
 
         // ----------------------------------------------------------------
-        // Stage 2 — Install Terraform + Init
+        // Stage 2 — Terraform Init
+        //           Using hashicorp/terraform:1.7.5 container (already has terraform)
         // ----------------------------------------------------------------
         stage('Terraform Init') {
             steps {
-                echo '⚙️ Installing Terraform and initialising...'
-                sh '''
-                    # Install Terraform if not present (Jenkins agent is a plain container)
-                    if ! command -v terraform &> /dev/null; then
-                        echo "Installing Terraform 1.7.5..."
-                        apt-get update -qq && apt-get install -y -qq unzip curl 2>/dev/null || \
-                        (yum install -y unzip curl 2>/dev/null || true)
-                        curl -sLo /tmp/terraform.zip https://releases.hashicorp.com/terraform/1.7.5/terraform_1.7.5_linux_amd64.zip
-                        unzip -q /tmp/terraform.zip -d /tmp
-                        mv /tmp/terraform /usr/local/bin/terraform
-                        chmod +x /usr/local/bin/terraform
-                        rm /tmp/terraform.zip
-                    fi
-                    terraform version
-                '''
+                echo '⚙️ Initialising Terraform...'
+                sh 'terraform version'
                 dir("${TF_DIR}") {
                     sh '''
-                        terraform init -upgrade -reconfigure \
-                            -backend-config="profile=" 2>&1 || \
-                        terraform init -upgrade -reconfigure 2>&1
+                        # Remove profile setting — Jenkins uses IRSA (no AWS profile needed)
+                        sed -i 's/profile.*=.*"shafi"//g' main.tf 2>/dev/null || true
+                        terraform init -upgrade -reconfigure
                     '''
                 }
             }
