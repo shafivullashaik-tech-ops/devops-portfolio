@@ -15,9 +15,10 @@
 // =============================================================================
 
 pipeline {
-    // Use the default Jenkins agent (already running — no new pod needed)
-    // Terraform is installed at Stage 2 via direct binary download (no apt/yum needed)
-    agent any
+    // Run on the Jenkins controller itself (built-in node) — NO new pod created.
+    // Jenkins Kubernetes plugin spawns a pod even for 'agent any', so we must
+    // explicitly target the built-in node to avoid CPU/scheduling failures.
+    agent { label 'built-in' }
 
     environment {
         AWS_REGION         = 'us-west-2'
