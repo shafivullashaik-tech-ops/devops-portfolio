@@ -1,0 +1,224 @@
+# =============================================================================
+# LLM Gateway — Kubernetes Deployment + Service
+#
+# Namespace: llmops
+# Integrates with existing portfolio infrastructure:
+#   - ECR image from aws-platform-infra/terraform/modules/ecr/
+#   - IRSA for AWS access (no hardcoded credentials)
+#   - ServiceMonitor (prometheus-rules.yaml) → kube-prometheus-stack
+#   - ArgoCD GitOps sync via gitops-eks-platform/
+# =============================================================================
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: llmops
+  labels:
+    app.kubernetes.io/managed-by: argocd
+    team: platform
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: llm-gateway
+  namespace: llmops
+  annotations:
+    # IRSA — links to the IAM role created in aws-platform-infra/terraform/modules/iam/
+    eks.amazonaws.com/role-arn: arn:aws:iam::050451393596:role/llm-gateway-irsa
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: llm-gateway
+  namespace: llmops
+  labels:
+    app: llm-gateway
+    version: "1.0.0"
+    team: platform
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: llm-gateway
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0          # Zero-downtime deploys
+  template:
+    metadata:
+      labels:
+        app: llm-gateway
+        version: "1.0.0"
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port:   "8000"
+        prometheus.io/path:   "/metrics"
+    spec:
+      serviceAccountName: llm-gateway
+
+      # Security context — non-root (matches Dockerfile)
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+
+      containers:
+        - name: llm-gateway
+          # Image pushed by Jenkins → ECR (see Jenkinsfile)
+          image: 050451393596.dkr.ecr.us-west-2.amazonaws.com/llm-gateway:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+
+          env:
+            # LLM Backend — "openai" in prod, "stub" in dev
+            - name: LLM_BACKEND
+              value: "openai"
+            # OpenAI API key from Kubernetes Secret (not hardcoded)
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: llm-gateway-secrets
+                  key: openai-api-key
+            # JWT Secret from Kubernetes Secret
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: llm-gateway-secrets
+                  key: jwt-secret
+            - name: JWT_ALGORITHM
+              value: "HS256"
+            # pgvector — connects to RDS Postgres via the existing VPC
+            - name: VECTOR_STORE_BACKEND
+              value: "pgvector"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: llm-gateway-secrets
+                  key: database-url
+            - name: EMBEDDING_DIM
+              value: "1536"
+            - name: CHUNK_SIZE
+              value: "512"
+            - name: CHUNK_OVERLAP
+              value: "64"
+            # Rate limits
+            - name: RATE_CHAT_MAX
+              value: "20"
+            - name: RATE_RAG_MAX
+              value: "10"
+            # Observability
+            - name: LOG_FORMAT
+              value: "json"
+            - name: LOG_LEVEL
+              value: "INFO"
+            - name: RESPONSE_CACHE_ENABLED
+              value: "true"
+
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            failureThreshold: 3
+
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+
+      # Spread across AZs for HA — use ScheduleAnyway for dev (2-node cluster)
+      # Change to DoNotSchedule in production with 3+ nodes across 3 AZs
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: llm-gateway
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: llm-gateway
+  namespace: llmops
+  labels:
+    app: llm-gateway
+    team: platform
+spec:
+  type: ClusterIP
+  selector:
+    app: llm-gateway
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP
+
+---
+# HPA — scale out under load
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: llm-gateway
+  namespace: llmops
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: llm-gateway
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+
+---
+# Secret template — populate with real values via Sealed Secrets or External Secrets Operator
+# kubectl create secret generic llm-gateway-secrets \
+#   --from-literal=openai-api-key=sk-... \
+#   --from-literal=jwt-secret=<strong-random-string> \
+#   --from-literal=database-url=postgresql://... \
+#   --namespace=llmops
+apiVersion: v1
+kind: Secret
+metadata:
+  name: llm-gateway-secrets
+  namespace: llmops
+  annotations:
+    # Use External Secrets Operator in production to pull from AWS Secrets Manager
+    # (aws-platform-infra/terraform/modules/iam/ grants access)
+    externalsecrets.io/source: "aws-secrets-manager"
+type: Opaque
+stringData:
+  openai-api-key: "REPLACE_WITH_REAL_KEY"
+  jwt-secret: "REPLACE_WITH_STRONG_SECRET"
+  database-url: "REPLACE_WITH_RDS_URL"

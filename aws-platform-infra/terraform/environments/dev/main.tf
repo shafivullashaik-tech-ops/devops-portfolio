@@ -1,6 +1,9 @@
-# Platform Infrastructure - Dev Environment
-# This file ONLY consumes modules - NO direct resources!
-# This demonstrates enterprise best practices for Terraform structure
+# =============================================================================
+# Platform Infrastructure — Dev Environment
+#
+# Enterprise pattern: this file contains ONLY module calls.
+# All resources are defined inside modules in terraform-aws-modules/.
+# =============================================================================
 
 terraform {
   required_version = ">= 1.5.0"
@@ -36,7 +39,6 @@ provider "aws" {
   }
 }
 
-# Local variables
 locals {
   cluster_name = "portfolio-eks-${var.environment}"
 
@@ -48,7 +50,7 @@ locals {
 }
 
 ################################################################################
-# VPC Module
+# VPC
 ################################################################################
 
 module "vpc" {
@@ -61,18 +63,15 @@ module "vpc" {
   public_subnet_cidrs  = var.public_subnet_cidrs
   private_subnet_cidrs = var.private_subnet_cidrs
 
-  # Cost optimization: Single NAT Gateway for dev
-  single_nat_gateway = true
-
-  # Enable VPC Flow Logs for security monitoring
-  enable_flow_logs          = true
-  flow_logs_retention_days  = 7
+  single_nat_gateway       = true   # cost optimisation for dev
+  enable_flow_logs         = true
+  flow_logs_retention_days = 7
 
   tags = local.common_tags
 }
 
 ################################################################################
-# EKS Module
+# EKS
 ################################################################################
 
 module "eks" {
@@ -84,24 +83,21 @@ module "eks" {
   vpc_id     = module.vpc.vpc_id
   subnet_ids = module.vpc.private_subnet_ids
 
-  # API endpoint access
   endpoint_private_access = true
   endpoint_public_access  = true
   public_access_cidrs     = var.eks_public_access_cidrs
 
-  # Enable all control plane logs for monitoring
-  cluster_log_types        = ["api", "audit", "authenticator", "controllerManager", "scheduler"]
+  cluster_log_types          = ["api", "audit", "authenticator", "controllerManager", "scheduler"]
   cluster_log_retention_days = 7
 
-  # Node groups configuration
   node_groups = {
     general = {
-      instance_types  = ["t3.medium"]
-      desired_size    = 2
-      min_size        = 1
-      max_size        = 3
-      disk_size       = 30
-      capacity_type   = "ON_DEMAND"
+      instance_types = ["t3.medium"]
+      desired_size   = 2
+      min_size       = 1
+      max_size       = 3
+      disk_size      = 30
+      capacity_type  = "ON_DEMAND"
 
       labels = {
         role        = "general"
@@ -114,163 +110,79 @@ module "eks" {
 }
 
 ################################################################################
-# ECR Module
+# ECR — demo-app
 ################################################################################
 
 module "ecr" {
   source = "../../../../terraform-aws-modules/ecr"
 
-  repository_name        = var.app_name
-  image_tag_mutability   = "MUTABLE"
-  scan_on_push           = true
-  encryption_type        = "AES256"
-  image_retention_count  = 10
+  repository_name       = var.app_name
+  image_tag_mutability  = "MUTABLE"
+  scan_on_push          = true
+  encryption_type       = "AES256"
+  image_retention_count = 10
 
-  # Allow Jenkins to push images
-  # Note: Add Jenkins IAM role ARN after Jenkins is created
   allowed_pull_principals = []
 
   tags = local.common_tags
 }
 
 ################################################################################
-# Jenkins IRSA - IAM Role for Jenkins to access ECR & EKS
+# ECR — llm-gateway (LLMOps RAG Gateway)
 ################################################################################
 
-resource "aws_iam_role" "jenkins_irsa" {
-  name = "${local.cluster_name}-jenkins-irsa"
+module "ecr_llm_gateway" {
+  source = "../../../../terraform-aws-modules/ecr"
 
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect = "Allow"
-      Principal = {
-        Federated = module.eks.oidc_provider_arn
-      }
-      Action = "sts:AssumeRoleWithWebIdentity"
-      Condition = {
-        StringEquals = {
-          "${replace(module.eks.oidc_provider_arn, "/^(.*provider/)/", "")}:sub" = "system:serviceaccount:jenkins:jenkins"
-          "${replace(module.eks.oidc_provider_arn, "/^(.*provider/)/", "")}:aud" = "sts.amazonaws.com"
-        }
-      }
-    }]
-  })
+  repository_name       = "llm-gateway"
+  image_tag_mutability  = "MUTABLE"
+  scan_on_push          = true
+  encryption_type       = "AES256"
+  image_retention_count = 10
 
-  tags = local.common_tags
-}
+  allowed_pull_principals = []
 
-resource "aws_iam_role_policy" "jenkins_ecr_policy" {
-  name = "${local.cluster_name}-jenkins-ecr-policy"
-  role = aws_iam_role.jenkins_irsa.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid    = "ECRAuth"
-        Effect = "Allow"
-        Action = [
-          "ecr:GetAuthorizationToken"
-        ]
-        Resource = "*"
-      },
-      {
-        Sid    = "ECRPushPull"
-        Effect = "Allow"
-        Action = [
-          "ecr:BatchCheckLayerAvailability",
-          "ecr:GetDownloadUrlForLayer",
-          "ecr:GetRepositoryPolicy",
-          "ecr:DescribeRepositories",
-          "ecr:ListImages",
-          "ecr:DescribeImages",
-          "ecr:BatchGetImage",
-          "ecr:InitiateLayerUpload",
-          "ecr:UploadLayerPart",
-          "ecr:CompleteLayerUpload",
-          "ecr:PutImage"
-        ]
-        Resource = module.ecr.repository_arn
-      },
-      {
-        Sid    = "EKSDescribe"
-        Effect = "Allow"
-        Action = [
-          "eks:DescribeCluster"
-        ]
-        Resource = module.eks.cluster_arn
-      }
-    ]
+  tags = merge(local.common_tags, {
+    Service = "llmops-rag-gateway"
   })
 }
 
-output "jenkins_irsa_role_arn" {
-  description = "IAM Role ARN for Jenkins IRSA"
-  value       = aws_iam_role.jenkins_irsa.arn
-}
-
 ################################################################################
-# Import existing node group into state (already exists in AWS)
-# Remove this block after first successful terraform apply
-################################################################################
-
-import {
-  to = module.eks.aws_eks_node_group.main["general"]
-  id = "portfolio-eks-dev:portfolio-eks-dev-general"
-}
-
-################################################################################
-# EBS CSI Driver Addon
-# Required for PVC provisioning using gp2/gp3 StorageClass on EKS 1.23+
-################################################################################
-
-resource "aws_eks_addon" "ebs_csi_driver" {
-  cluster_name                = module.eks.cluster_id
-  addon_name                  = "aws-ebs-csi-driver"
-  service_account_role_arn    = module.iam.ebs_csi_driver_role_arn
-  resolve_conflicts_on_create = "OVERWRITE"
-  resolve_conflicts_on_update = "OVERWRITE"
-
-  depends_on = [module.eks, module.iam]
-
-  tags = local.common_tags
-}
-
-################################################################################
-# Jenkins Module (Placeholder)
-# Uncomment when Jenkins module is ready
-################################################################################
-
-# module "jenkins" {
-#   source = "../../../../terraform-aws-modules/jenkins"
-#
-#   vpc_id            = module.vpc.vpc_id
-#   subnet_id         = module.vpc.public_subnet_ids[0]
-#   instance_type     = "t3.small"
-#   key_name          = var.ec2_key_name
-#
-#   # Grant Jenkins permissions to ECR and EKS
-#   ecr_repository_arns = [module.ecr.repository_arn]
-#   eks_cluster_name    = module.eks.cluster_id
-#
-#   allowed_cidr_blocks = var.jenkins_allowed_cidrs
-#
-#   tags = local.common_tags
-# }
-
-################################################################################
-# IAM Module for IRSA
-# Creates IRSA roles for EBS CSI driver and other services
+# IAM — IRSA roles for EBS CSI, Jenkins, LLM Gateway
 ################################################################################
 
 module "iam" {
   source = "../../../../terraform-aws-modules/iam"
 
-  cluster_name               = local.cluster_name
-  oidc_provider_arn          = module.eks.oidc_provider_arn
+  cluster_name      = local.cluster_name
+  oidc_provider_arn = module.eks.oidc_provider_arn
+  eks_cluster_arn   = module.eks.cluster_arn
+
+  # EBS CSI Driver (required for PVC on EKS 1.23+)
   create_ebs_csi_driver_role = true
-  create_argocd_role         = false
+
+  # ArgoCD (disabled — ArgoCD uses default SA permissions)
+  create_argocd_role = false
+
+  # Jenkins IRSA — push images to ECR, describe EKS cluster
+  create_jenkins_role = true
+  jenkins_namespace   = "jenkins"
+  jenkins_ecr_repository_arns = [
+    module.ecr.repository_arn,
+    module.ecr_llm_gateway.repository_arn,
+  ]
+
+  # LLM Gateway IRSA — read secrets from AWS Secrets Manager
+  create_llm_gateway_role = true
 
   tags = local.common_tags
+}
+
+################################################################################
+# Import existing node group (already in AWS — remove after first apply)
+################################################################################
+
+import {
+  to = module.eks.aws_eks_node_group.main["general"]
+  id = "portfolio-eks-dev:portfolio-eks-dev-general"
 }
