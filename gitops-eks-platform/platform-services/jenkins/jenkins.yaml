@@ -1,0 +1,39 @@
+# ArgoCD Application — Jenkins (CI engine)
+# GitOps managed: ArgoCD deploys and manages Jenkins via Helm
+
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: jenkins
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+
+  sources:
+    # Source 1: Jenkins Helm chart
+    - repoURL: https://charts.jenkins.io
+      chart: jenkins
+      targetRevision: "5.8.7"
+      helm:
+        releaseName: jenkins
+        valueFiles:
+          - $values/aws-platform-infra/jenkins/jenkins-values.yaml
+
+    # Source 2: Values files from Git repo (referenced as $values above)
+    - repoURL: https://github.com/shafivullashaik-tech-ops/devops-portfolio.git
+      targetRevision: develop
+      ref: values
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: jenkins
+
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

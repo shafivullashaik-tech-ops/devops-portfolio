@@ -34,7 +34,7 @@ spec:
 
     # Source 2: Values files from Git repo
     - repoURL: https://github.com/shafivullashaik-tech-ops/devops-portfolio.git
-      targetRevision: main
+      targetRevision: develop
       ref: values
 
   destination:

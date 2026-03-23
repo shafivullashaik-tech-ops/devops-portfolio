@@ -1,10 +1,10 @@
-# App-of-Apps Pattern
-# This is the root application that manages all other applications
+# ArgoCD App-of-Apps entry for Jenkins platform service
+# This tells ArgoCD to manage all Jenkins apps from platform-services/jenkins/
 
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: app-of-apps
+  name: platform-jenkins
   namespace: argocd
   finalizers:
     - resources-finalizer.argocd.argoproj.io
@@ -14,7 +14,7 @@ spec:
   source:
     repoURL: https://github.com/shafivullashaik-tech-ops/devops-portfolio.git
     targetRevision: develop
-    path: gitops-eks-platform/apps
+    path: gitops-eks-platform/platform-services/jenkins
 
   destination:
     server: https://kubernetes.default.svc
