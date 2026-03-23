@@ -92,8 +92,40 @@ controller:
 
       pipeline-config: |
         jobs:
+          # ── 1. Infrastructure Pipeline (Terraform) ──────────────────────
+          - script: >
+              multibranchPipelineJob('infra-terraform') {
+                description('Terraform pipeline: VPC, EKS, ECR, IAM (IRSA). Run this FIRST before any app pipeline.')
+                branchSources {
+                  github {
+                    id('infra-source')
+                    scanCredentialsId('github-credentials')
+                    repoOwner('shafivullashaik-tech-ops')
+                    repository('devops-portfolio')
+                    buildForkPRHead(false)
+                    buildForkPRMerge(false)
+                    buildOriginBranch(true)
+                    buildOriginBranchWithPR(false)
+                    buildOriginPRHead(false)
+                    buildOriginPRMerge(true)
+                  }
+                }
+                factory {
+                  workflowBranchProjectFactory {
+                    scriptPath('aws-platform-infra/Jenkinsfile')
+                  }
+                }
+                orphanedItemStrategy {
+                  discardOldItems {
+                    numToKeep(5)
+                  }
+                }
+              }
+
+          # ── 2. Demo App Pipeline ────────────────────────────────────────
           - script: >
               multibranchPipelineJob('demo-app') {
+                description('App pipeline: build, test, push to ECR, deploy via ArgoCD.')
                 branchSources {
                   github {
                     id('demo-app-source')
@@ -111,6 +143,36 @@ controller:
                 factory {
                   workflowBranchProjectFactory {
                     scriptPath('app-microservice-demo/Jenkinsfile')
+                  }
+                }
+                orphanedItemStrategy {
+                  discardOldItems {
+                    numToKeep(5)
+                  }
+                }
+              }
+
+          # ── 3. LLM Gateway Pipeline ─────────────────────────────────────
+          - script: >
+              multibranchPipelineJob('llm-gateway') {
+                description('LLM Ops RAG Gateway: test, eval gate, ECR push, ArgoCD deploy. Run AFTER infra-terraform.')
+                branchSources {
+                  github {
+                    id('llm-gateway-source')
+                    scanCredentialsId('github-credentials')
+                    repoOwner('shafivullashaik-tech-ops')
+                    repository('devops-portfolio')
+                    buildForkPRHead(false)
+                    buildForkPRMerge(false)
+                    buildOriginBranch(true)
+                    buildOriginBranchWithPR(false)
+                    buildOriginPRHead(false)
+                    buildOriginPRMerge(true)
+                  }
+                }
+                factory {
+                  workflowBranchProjectFactory {
+                    scriptPath('llmops-rag-gateway/Jenkinsfile')
                   }
                 }
                 orphanedItemStrategy {

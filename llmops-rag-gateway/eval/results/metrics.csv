@@ -1,0 +1,2 @@
+timestamp,total_questions,groundedness_avg,citation_rate,refusal_rate,passed
+2026-03-20T00:00:00,10,0.8250,0.8750,1.0,True
