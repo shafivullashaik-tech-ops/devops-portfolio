@@ -47,11 +47,28 @@ kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
 GITOPS_DIR="${PROJECT_ROOT}/gitops-eks-platform"
 BOOTSTRAP_DIR="${GITOPS_DIR}/bootstrap"
 
-# kubectl apply -k requires a valid kustomization.yaml - always sync from argocd-install.yaml
-if [ -f "${BOOTSTRAP_DIR}/argocd-install.yaml" ]; then
-    log_info "Syncing kustomization.yaml from argocd-install.yaml..."
-    cp -f "${BOOTSTRAP_DIR}/argocd-install.yaml" "${BOOTSTRAP_DIR}/kustomization.yaml"
-fi
+# kubectl apply -k requires a valid kustomization.yaml with ONLY the Kustomization document
+# argocd-install.yaml contains a multi-doc YAML (Namespace + Kustomization) which is invalid
+# So we generate a clean single-document kustomization.yaml
+log_info "Generating clean kustomization.yaml for kubectl apply -k..."
+cat > "${BOOTSTRAP_DIR}/kustomization.yaml" <<'KUSTOMIZATION'
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: argocd
+
+resources:
+  - https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+
+patches:
+  - patch: |-
+      - op: replace
+        path: /spec/type
+        value: LoadBalancer
+    target:
+      kind: Service
+      name: argocd-server
+KUSTOMIZATION
 
 kubectl apply -k "${BOOTSTRAP_DIR}" --server-side 2>/dev/null || \
     kubectl apply -k "${BOOTSTRAP_DIR}" --server-side --force-conflicts
@@ -79,6 +96,42 @@ log_info "App-of-Apps applied. ArgoCD will sync platform services automatically 
 # ─── Step 4: Deploy Monitoring Stack ──────────────────────────────────────────
 # NOTE: Deploy monitoring BEFORE Jenkins so Prometheus CRDs exist for ServiceMonitor
 log_step "4/5  Deploying Monitoring Stack (Prometheus + Grafana)"
+
+# Always clean up any orphaned kube-prometheus-stack ClusterRoles/ClusterRoleBindings
+# before installing. This handles leftover resources from any previous failed installs.
+# Using --ignore-not-found so this is safe on a fresh cluster too.
+log_info "Cleaning up any orphaned kube-prometheus-stack cluster-scoped resources..."
+
+# Delete by label selectors (covers most cases)
+kubectl delete clusterrole,clusterrolebinding \
+    -l "app.kubernetes.io/instance=kube-prometheus-stack" \
+    --ignore-not-found 2>/dev/null || true
+kubectl delete clusterrole,clusterrolebinding \
+    -l "release=kube-prometheus-stack" \
+    --ignore-not-found 2>/dev/null || true
+
+# Also delete known names explicitly (handles resources without proper labels)
+for RESOURCE in \
+    "clusterrole/kube-prometheus-stack-grafana-clusterrole" \
+    "clusterrole/kube-prometheus-stack-kube-state-metrics" \
+    "clusterrole/kube-prometheus-stack-operator" \
+    "clusterrole/kube-prometheus-stack-prometheus" \
+    "clusterrolebinding/kube-prometheus-stack-grafana-clusterrolebinding" \
+    "clusterrolebinding/kube-prometheus-stack-kube-state-metrics" \
+    "clusterrolebinding/kube-prometheus-stack-operator" \
+    "clusterrolebinding/kube-prometheus-stack-prometheus"; do
+    kubectl delete "${RESOURCE}" --ignore-not-found 2>/dev/null || true
+done
+
+# Delete namespace if it exists without a valid helm release (orphaned)
+EXISTING_RELEASE=$(helm list -n monitoring --short 2>/dev/null | grep kube-prometheus-stack || true)
+if [ -z "${EXISTING_RELEASE}" ] && kubectl get namespace monitoring &>/dev/null; then
+    log_warn "Found orphaned monitoring namespace. Deleting..."
+    kubectl delete namespace monitoring --wait=true 2>/dev/null || true
+    log_info "Monitoring namespace deleted ✓"
+fi
+
+log_info "Cluster-scoped cleanup complete ✓"
 
 kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
 
