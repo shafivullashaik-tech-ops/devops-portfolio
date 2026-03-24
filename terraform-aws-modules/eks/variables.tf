@@ -141,3 +141,15 @@ variable "enable_aws_load_balancer_controller" {
   type        = bool
   default     = true
 }
+
+variable "ebs_csi_driver_role_arn" {
+  description = "IAM Role ARN for the EBS CSI Driver (IRSA). Required for PVC provisioning on EKS 1.23+."
+  type        = string
+  default     = null
+}
+
+variable "ebs_csi_driver_addon_version" {
+  description = "Version of the aws-ebs-csi-driver addon. Set to null for latest."
+  type        = string
+  default     = null
+}

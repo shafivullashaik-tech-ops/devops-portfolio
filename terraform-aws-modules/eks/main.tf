@@ -247,6 +247,20 @@ resource "aws_eks_addon" "kube_proxy" {
   tags = var.tags
 }
 
+# EBS CSI Driver addon — required for PVC provisioning on EKS 1.23+
+resource "aws_eks_addon" "ebs_csi_driver" {
+  cluster_name             = aws_eks_cluster.main.name
+  addon_name               = "aws-ebs-csi-driver"
+  addon_version            = var.ebs_csi_driver_addon_version
+  service_account_role_arn = var.ebs_csi_driver_role_arn
+  resolve_conflicts_on_create = "OVERWRITE"
+  resolve_conflicts_on_update = "OVERWRITE"
+
+  depends_on = [aws_eks_node_group.main]
+
+  tags = var.tags
+}
+
 # CloudWatch Log Group for EKS cluster logs
 resource "aws_cloudwatch_log_group" "cluster" {
   count = length(var.cluster_log_types) > 0 ? 1 : 0

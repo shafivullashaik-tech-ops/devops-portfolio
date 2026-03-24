@@ -106,6 +106,9 @@ module "eks" {
     }
   }
 
+  # EBS CSI Driver — pass IRSA role from IAM module for PVC provisioning
+  ebs_csi_driver_role_arn = module.iam.ebs_csi_driver_role_arn
+
   tags = local.common_tags
 }
 
