@@ -1,0 +1,13 @@
+# =============================================================================
+# Production-only dependencies (require C++ compiler to build)
+#
+# On Linux/Docker (Dockerfile): works out of the box
+# On Windows locally: install Microsoft C++ Build Tools first:
+#   https://visualstudio.microsoft.com/visual-cpp-build-tools/
+#
+# Usage:
+#   pip install -r requirements.txt -r requirements-prod.txt
+# =============================================================================
+
+# pgvector backend — only needed when VECTOR_STORE_BACKEND=pgvector
+asyncpg==0.29.0

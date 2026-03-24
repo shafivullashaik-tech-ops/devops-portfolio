@@ -4,11 +4,9 @@ kind: Kustomization
 namespace: argocd
 
 resources:
-  # ArgoCD stable release
   - https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
 
 patches:
-  # Change argocd-server service to LoadBalancer for easy access
   - patch: |-
       - op: replace
         path: /spec/type

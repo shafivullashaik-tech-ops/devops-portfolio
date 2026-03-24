@@ -1,0 +1,39 @@
+# =============================================================================
+# LLM Gateway — Python dependencies
+#
+# Local dev / CI (no C++ compiler needed):
+#   pip install -r requirements.txt
+#
+# Production (pgvector backend, needs C++ Build Tools on Windows):
+#   pip install -r requirements.txt -r requirements-prod.txt
+# =============================================================================
+
+# --- Web framework ---
+fastapi==0.111.0
+uvicorn[standard]==0.29.0
+python-multipart==0.0.9
+
+# --- Auth ---
+PyJWT==2.8.0
+
+# --- Observability ---
+prometheus-client==0.20.0
+
+# --- LLM / AI (only needed when LLM_BACKEND=openai) ---
+# Omit for pure stub/local testing — no API key required
+openai>=1.25.0
+
+# --- HTTP client (eval harness) ---
+httpx==0.27.0
+
+# --- Testing ---
+pytest==8.1.1
+pytest-asyncio==0.23.6
+pytest-cov==5.0.0
+
+# --- Code quality ---
+ruff==0.4.2
+
+# NOTE: asyncpg (pgvector backend) is in requirements-prod.txt
+# It requires Microsoft C++ Build Tools on Windows.
+# For local dev/testing, VECTOR_STORE_BACKEND=memory is used (no asyncpg needed).

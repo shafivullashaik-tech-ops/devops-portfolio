@@ -1,0 +1,15 @@
+apiVersion: v2
+name: llm-gateway
+description: Production-grade LLM Gateway with RAG pipeline, guardrails, and observability
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - llm
+  - rag
+  - ai
+  - gateway
+  - nlp
+maintainers:
+  - name: Shaik Shafivulla
+    email: shafivullashaik916@gmail.com

@@ -1,0 +1,28 @@
+# ArgoCD App-of-Apps entry for Jenkins platform service
+# This tells ArgoCD to manage all Jenkins apps from platform-services/jenkins/
+
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: platform-jenkins
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/shafivullashaik-tech-ops/devops-portfolio.git
+    targetRevision: develop
+    path: gitops-eks-platform/platform-services/jenkins
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

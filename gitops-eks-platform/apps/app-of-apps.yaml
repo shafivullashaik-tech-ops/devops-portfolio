@@ -13,7 +13,7 @@ spec:
 
   source:
     repoURL: https://github.com/shafivullashaik-tech-ops/devops-portfolio.git
-    targetRevision: main
+    targetRevision: develop
     path: gitops-eks-platform/apps
 
   destination:
