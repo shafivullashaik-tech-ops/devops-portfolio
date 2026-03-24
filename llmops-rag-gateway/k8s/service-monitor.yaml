@@ -1,0 +1,34 @@
+# =============================================================================
+# ServiceMonitor — LLM Gateway
+#
+# Tells the Prometheus Operator (already deployed via kube-prometheus-stack
+# in sre-observability-stack/) to scrape the LLM Gateway's /metrics endpoint.
+#
+# This is the ENTERPRISE pattern — no standalone Prometheus needed.
+# The existing kube-prometheus-stack picks this up automatically because
+# serviceMonitorSelectorNilUsesHelmValues: false is set in its values.yaml.
+# =============================================================================
+
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: llm-gateway
+  namespace: llmops
+  labels:
+    app: llm-gateway
+    team: platform
+    # This label is required by kube-prometheus-stack sidecar discovery
+    release: kube-prometheus
+spec:
+  selector:
+    matchLabels:
+      app: llm-gateway
+  namespaceSelector:
+    matchNames:
+      - llmops
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
+      scrapeTimeout: 10s
+      honorLabels: true

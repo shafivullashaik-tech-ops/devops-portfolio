@@ -1,0 +1,140 @@
+# =============================================================================
+# PrometheusRule — LLM Gateway Alerts
+#
+# These rules are consumed by the Prometheus Operator that is ALREADY deployed
+# in sre-observability-stack/ (kube-prometheus-stack).
+#
+# Alerts are routed to Alertmanager → Slack / PagerDuty via the existing
+# alertmanager config in sre-observability-stack/monitoring/kube-prometheus-stack/values.yaml
+# =============================================================================
+
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: llm-gateway-alerts
+  namespace: llmops
+  labels:
+    app: llm-gateway
+    release: kube-prometheus        # Required for Prometheus Operator discovery
+    role: alert-rules
+spec:
+  groups:
+
+    # -------------------------------------------------------------------------
+    # Group 1 — Availability
+    # -------------------------------------------------------------------------
+    - name: llm-gateway.availability
+      interval: 30s
+      rules:
+
+        - alert: LLMGatewayDown
+          expr: up{job="llm-gateway"} == 0
+          for: 1m
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "LLM Gateway is down"
+            description: "LLM Gateway instance {{ $labels.instance }} has been unreachable for 1 minute."
+            runbook_url: "https://github.com/shafivullashaik-tech-ops/devops-portfolio/blob/main/llmops-rag-gateway/README.md"
+
+        - alert: LLMGatewayHighErrorRate
+          expr: |
+            sum(rate(llm_request_total{status=~"5.."}[5m]))
+            /
+            sum(rate(llm_request_total[5m])) > 0.05
+          for: 5m
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "LLM Gateway high error rate (>5%)"
+            description: "Error rate is {{ $value | humanizePercentage }} over the last 5 minutes."
+            runbook_url: "https://github.com/shafivullashaik-tech-ops/devops-portfolio/blob/main/llmops-rag-gateway/README.md"
+
+    # -------------------------------------------------------------------------
+    # Group 2 — Latency (SLO-style)
+    # -------------------------------------------------------------------------
+    - name: llm-gateway.latency
+      interval: 30s
+      rules:
+
+        - alert: LLMGatewayHighP95Latency
+          expr: |
+            histogram_quantile(0.95,
+              sum(rate(llm_request_latency_seconds_bucket{route="/chat"}[5m])) by (le)
+            ) > 5.0
+          for: 5m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "LLM /chat p95 latency > 5s"
+            description: "p95 latency for /chat is {{ $value | humanizeDuration }}. Check LLM backend response time."
+
+        - alert: LLMGatewayRAGHighP95Latency
+          expr: |
+            histogram_quantile(0.95,
+              sum(rate(llm_request_latency_seconds_bucket{route="/rag/chat"}[5m])) by (le)
+            ) > 10.0
+          for: 5m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "LLM /rag/chat p95 latency > 10s"
+            description: "p95 latency for /rag/chat is {{ $value | humanizeDuration }}. Check vector store or LLM backend."
+
+    # -------------------------------------------------------------------------
+    # Group 3 — Cost / Token Budget
+    # -------------------------------------------------------------------------
+    - name: llm-gateway.cost
+      interval: 60s
+      rules:
+
+        - alert: LLMTokenBudgetBurnRateHigh
+          expr: |
+            sum(rate(llm_token_usage_total[5m])) > 1000
+          for: 10m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "LLM token usage > 1000 tokens/sec for 10 minutes"
+            description: "Current token rate: {{ $value | humanize }} tokens/sec. Review traffic and rate limits."
+
+    # -------------------------------------------------------------------------
+    # Group 4 — Guardrails
+    # -------------------------------------------------------------------------
+    - name: llm-gateway.guardrails
+      interval: 60s
+      rules:
+
+        - alert: LLMGuardrailInjectionSpike
+          expr: |
+            sum(rate(llm_guardrail_blocks_total{block_type="injection"}[5m])) > 1
+          for: 5m
+          labels:
+            severity: warning
+            team: security
+          annotations:
+            summary: "Prompt injection attempts spike detected"
+            description: "More than 1 injection block/sec detected. Possible attack in progress."
+
+    # -------------------------------------------------------------------------
+    # Group 5 — Rate Limiting
+    # -------------------------------------------------------------------------
+    - name: llm-gateway.rate-limiting
+      interval: 30s
+      rules:
+
+        - alert: LLMGatewayRateLimitHigh
+          expr: |
+            sum(rate(llm_request_total{status="429"}[5m])) > 5
+          for: 5m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "High rate of 429 responses from LLM Gateway"
+            description: "{{ $value | humanize }} rate-limited requests/sec. Consider raising quotas or investigating client behaviour."
