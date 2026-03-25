@@ -1,0 +1,27 @@
+---
+# =============================================================================
+# RBAC Kustomization — Apply all RBAC resources in correct order
+# =============================================================================
+# Apply with:
+#   kubectl apply -k gitops-eks-platform/rbac/
+#
+# Order matters:
+#   1. aws-auth-configmap  → Bridge: AWS IAM → K8s identity
+#   2. cluster-roles       → Define what each role CAN do
+#   3. cluster-role-bindings → Bind cluster-wide roles to groups
+#   4. namespace-role-bindings → Bind namespace roles to groups
+#   5. service-accounts    → Create per-app service accounts + IRSA
+# =============================================================================
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - aws-auth-configmap.yaml
+  - cluster-roles.yaml
+  - cluster-role-bindings.yaml
+  - namespace-role-bindings.yaml
+  - service-accounts.yaml
+
+commonLabels:
+  rbac.devops-portfolio.io/managed-by: "gitops"
+  rbac.devops-portfolio.io/version: "1.0.0"

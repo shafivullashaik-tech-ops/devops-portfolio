@@ -1,0 +1,308 @@
+---
+# =============================================================================
+# ENTERPRISE-GRADE EKS CLUSTER ROLES
+# =============================================================================
+# Role Hierarchy:
+#   platform-admin     → Full cluster access (DevOps/Platform team)
+#   developer          → Deploy & debug in dev/staging namespaces only
+#   sre                → Read-all + restart pods + exec into pods
+#   readonly           → View-only across all namespaces (auditors, managers)
+#   cicd               → Jenkins/ArgoCD service accounts (deploy only)
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# 1. PLATFORM ADMIN — Full cluster-admin equivalent (DevOps team)
+# -----------------------------------------------------------------------------
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: platform-admin
+  labels:
+    rbac.devops-portfolio.io/role-type: "admin"
+    rbac.devops-portfolio.io/managed-by: "gitops"
+  annotations:
+    description: "Full cluster administration. Assigned to platform/DevOps team leads."
+rules:
+  - apiGroups: ["*"]
+    resources: ["*"]
+    verbs: ["*"]
+
+---
+# -----------------------------------------------------------------------------
+# 2. DEVELOPER — Deploy and debug in assigned namespaces only
+# -----------------------------------------------------------------------------
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: developer
+  labels:
+    rbac.devops-portfolio.io/role-type: "developer"
+    rbac.devops-portfolio.io/managed-by: "gitops"
+  annotations:
+    description: "Deploy, view logs, exec into pods. No cluster-level access."
+rules:
+  # Core workload operations
+  - apiGroups: [""]
+    resources:
+      - pods
+      - pods/log
+      - pods/portforward
+      - services
+      - endpoints
+      - configmaps
+      - persistentvolumeclaims
+      - events
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # Allow exec into pods for debugging
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create"]
+  # Deployments, ReplicaSets, StatefulSets, DaemonSets
+  - apiGroups: ["apps"]
+    resources:
+      - deployments
+      - replicasets
+      - statefulsets
+      - daemonsets
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # HPA
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # Jobs and CronJobs
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # Ingress
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses", "networkpolicies"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+  # Helm / releases (read)
+  - apiGroups: ["helm.sh"]
+    resources: ["*"]
+    verbs: ["get", "list", "watch"]
+  # Read-only on Secrets (no secret data, only metadata)
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "watch"]
+  # ServiceAccounts (read-only)
+  - apiGroups: [""]
+    resources: ["serviceaccounts"]
+    verbs: ["get", "list", "watch"]
+
+---
+# -----------------------------------------------------------------------------
+# 3. SRE — Read everything + restart pods + exec + port-forward (no create/delete)
+# -----------------------------------------------------------------------------
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: sre
+  labels:
+    rbac.devops-portfolio.io/role-type: "sre"
+    rbac.devops-portfolio.io/managed-by: "gitops"
+  annotations:
+    description: "SRE/On-call: Read all resources, restart pods, exec for debugging. Cannot deploy new apps."
+rules:
+  # Read ALL resources cluster-wide
+  - apiGroups: ["*"]
+    resources: ["*"]
+    verbs: ["get", "list", "watch"]
+  # Restart pods (delete triggers restart)
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["delete"]
+  # Exec into pods for live debugging
+  - apiGroups: [""]
+    resources: ["pods/exec", "pods/portforward"]
+    verbs: ["create"]
+  # Scale deployments (scale up/down during incidents)
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets", "replicasets"]
+    verbs: ["patch", "update"]
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["patch", "update"]
+  # Cordon/uncordon nodes during incidents
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["patch", "update"]
+  # Create/update ConfigMaps for incident mitigation
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["create", "update", "patch"]
+
+---
+# -----------------------------------------------------------------------------
+# 4. READ-ONLY — Auditors, Managers, Compliance
+# -----------------------------------------------------------------------------
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: readonly
+  labels:
+    rbac.devops-portfolio.io/role-type: "readonly"
+    rbac.devops-portfolio.io/managed-by: "gitops"
+  annotations:
+    description: "View-only access to all resources. For auditors, managers, compliance team."
+rules:
+  - apiGroups: [""]
+    resources:
+      - pods
+      - pods/log
+      - services
+      - endpoints
+      - configmaps
+      - namespaces
+      - nodes
+      - persistentvolumes
+      - persistentvolumeclaims
+      - events
+      - serviceaccounts
+      - resourcequotas
+      - limitranges
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources:
+      - deployments
+      - replicasets
+      - statefulsets
+      - daemonsets
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses", "networkpolicies"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["roles", "rolebindings", "clusterroles", "clusterrolebindings"]
+    verbs: ["get", "list", "watch"]
+  # NOTE: Secrets intentionally excluded for compliance
+
+---
+# -----------------------------------------------------------------------------
+# 5. CICD-DEPLOYER — Jenkins/ArgoCD: deploy workloads, no cluster admin
+# -----------------------------------------------------------------------------
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: cicd-deployer
+  labels:
+    rbac.devops-portfolio.io/role-type: "cicd"
+    rbac.devops-portfolio.io/managed-by: "gitops"
+  annotations:
+    description: "CI/CD systems (Jenkins, ArgoCD). Can deploy apps but cannot modify cluster-level resources."
+rules:
+  # Workload management (full CRUD)
+  - apiGroups: [""]
+    resources:
+      - pods
+      - services
+      - endpoints
+      - configmaps
+      - serviceaccounts
+      - persistentvolumeclaims
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["apps"]
+    resources:
+      - deployments
+      - replicasets
+      - statefulsets
+      - daemonsets
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # Helm/releases
+  - apiGroups: ["helm.sh"]
+    resources: ["*"]
+    verbs: ["*"]
+  # Secrets (needed for Helm release secrets and image pull secrets)
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # Namespaces (read + create for new env deployments)
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list", "watch", "create"]
+  # RBAC for creating service accounts during deploys
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["roles", "rolebindings"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # Policy
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # Events (write for status updates)
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["get", "list", "watch", "create", "patch"]
+  # Custom Resources (ArgoCD, Prometheus, etc.)
+  - apiGroups: ["argoproj.io"]
+    resources: ["*"]
+    verbs: ["*"]
+  - apiGroups: ["monitoring.coreos.com"]
+    resources: ["*"]
+    verbs: ["*"]
+
+---
+# -----------------------------------------------------------------------------
+# 6. NAMESPACE-ADMIN — Admin of a specific namespace (team lead)
+# -----------------------------------------------------------------------------
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: namespace-admin
+  labels:
+    rbac.devops-portfolio.io/role-type: "namespace-admin"
+    rbac.devops-portfolio.io/managed-by: "gitops"
+  annotations:
+    description: "Full admin within a specific namespace. Used by team leads for their team namespace."
+rules:
+  - apiGroups: ["*"]
+    resources:
+      - pods
+      - pods/log
+      - pods/exec
+      - pods/portforward
+      - services
+      - endpoints
+      - configmaps
+      - secrets
+      - serviceaccounts
+      - persistentvolumeclaims
+      - events
+      - resourcequotas
+      - limitranges
+    verbs: ["*"]
+  - apiGroups: ["apps"]
+    resources: ["*"]
+    verbs: ["*"]
+  - apiGroups: ["batch"]
+    resources: ["*"]
+    verbs: ["*"]
+  - apiGroups: ["autoscaling"]
+    resources: ["*"]
+    verbs: ["*"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["*"]
+    verbs: ["*"]
+  - apiGroups: ["policy"]
+    resources: ["*"]
+    verbs: ["*"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["roles", "rolebindings"]
+    verbs: ["*"]

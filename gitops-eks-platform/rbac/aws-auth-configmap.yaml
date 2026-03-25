@@ -1,0 +1,130 @@
+---
+# =============================================================================
+# aws-auth ConfigMap — AWS IAM → Kubernetes RBAC Mapping
+# =============================================================================
+# This is the BRIDGE between AWS IAM and Kubernetes RBAC.
+#
+# How it works:
+#   1. Developer runs: aws eks update-kubeconfig --name my-cluster
+#   2. kubectl uses AWS IAM credentials to authenticate
+#   3. EKS checks this ConfigMap to map IAM identity → K8s group/user
+#   4. K8s RBAC (ClusterRoleBindings) maps that group → permissions
+#
+# AWS IAM Groups (create these in AWS IAM console or Terraform):
+#   eks-platform-admins  → platform-admin ClusterRole  (full cluster)
+#   eks-sre-team         → sre ClusterRole             (read+restart)
+#   eks-readonly         → readonly ClusterRole         (view-only)
+#   eks-demo-developers  → developer RoleBinding        (default ns)
+#   eks-llmops-developers→ developer RoleBinding        (llmops ns)
+#
+# IMPORTANT: Replace ARNs with your actual AWS Account ID and role names
+# =============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aws-auth
+  namespace: kube-system
+  labels:
+    rbac.devops-portfolio.io/managed-by: "gitops"
+  annotations:
+    description: "Maps AWS IAM roles/users to Kubernetes RBAC groups"
+data:
+  # -------------------------------------------------------------------------
+  # mapRoles: Maps AWS IAM Roles → K8s groups (used for SSO, node groups, IRSA)
+  # -------------------------------------------------------------------------
+  mapRoles: |
+
+    # ----- EKS MANAGED NODE GROUP ROLE (Required — do not remove) -----
+    - rolearn: arn:aws:iam::ACCOUNT_ID:role/eks-node-group-role
+      username: system:node:{{EC2PrivateDNSName}}
+      groups:
+        - system:bootstrappers
+        - system:nodes
+
+    # ----- PLATFORM ADMINS (DevOps / Platform Engineering Team) -----
+    # AWS SSO permission set or assumed role for platform engineers
+    - rolearn: arn:aws:iam::ACCOUNT_ID:role/AWSReservedSSO_EKSPlatformAdmin_XXXXXXXX
+      username: platform-admin
+      groups:
+        - eks-platform-admins   # → ClusterRoleBinding: platform-admins → platform-admin ClusterRole
+
+    # ----- SRE TEAM (On-call Engineers) -----
+    - rolearn: arn:aws:iam::ACCOUNT_ID:role/AWSReservedSSO_EKSSRETeam_XXXXXXXX
+      username: sre-user
+      groups:
+        - eks-sre-team          # → ClusterRoleBinding: sre-team → sre ClusterRole
+
+    # ----- READ-ONLY (Auditors, Managers, Compliance) -----
+    - rolearn: arn:aws:iam::ACCOUNT_ID:role/AWSReservedSSO_EKSReadOnly_XXXXXXXX
+      username: readonly-user
+      groups:
+        - eks-readonly          # → ClusterRoleBinding: readonly-users → readonly ClusterRole
+
+    # ----- DEMO-APP DEVELOPERS -----
+    - rolearn: arn:aws:iam::ACCOUNT_ID:role/AWSReservedSSO_EKSDemoDevs_XXXXXXXX
+      username: demo-developer
+      groups:
+        - eks-demo-developers   # → RoleBinding: demo-developers → developer role in default ns
+        - eks-demo-team-leads   # → RoleBinding: demo-team-lead-admin in default ns (for leads)
+
+    # ----- LLMOPS DEVELOPERS (AI/ML team) -----
+    - rolearn: arn:aws:iam::ACCOUNT_ID:role/AWSReservedSSO_EKSLLMOpsDevs_XXXXXXXX
+      username: llmops-developer
+      groups:
+        - eks-llmops-developers  # → RoleBinding: llm-developers → developer role in llmops ns
+        - eks-llmops-team-leads  # → RoleBinding: llm-team-lead-admin in llmops ns (for leads)
+
+    # ----- JENKINS CI/CD ROLE (assumed by Jenkins pod via IRSA) -----
+    - rolearn: arn:aws:iam::ACCOUNT_ID:role/jenkins-irsa-role
+      username: jenkins
+      groups:
+        - system:masters         # Jenkins needs full access to deploy across namespaces
+        # Note: For stricter control, replace system:masters with cicd-deployer group
+
+    # ----- ARGOCD ROLE (assumed by ArgoCD pods via IRSA) -----
+    - rolearn: arn:aws:iam::ACCOUNT_ID:role/argocd-irsa-role
+      username: argocd
+      groups:
+        - system:masters         # ArgoCD needs full access to sync all applications
+
+    # ----- TERRAFORM ROLE (used by CI/CD to provision EKS) -----
+    - rolearn: arn:aws:iam::ACCOUNT_ID:role/terraform-deployer-role
+      username: terraform
+      groups:
+        - eks-platform-admins
+
+  # -------------------------------------------------------------------------
+  # mapUsers: Maps individual IAM users → K8s users/groups
+  # Use sparingly — prefer roles (above) over individual users
+  # -------------------------------------------------------------------------
+  mapUsers: |
+
+    # Repository owner / main admin (break-glass access)
+    - userarn: arn:aws:iam::ACCOUNT_ID:user/shafivullashaik-tech-ops
+      username: shafivullashaik-tech-ops
+      groups:
+        - system:masters         # Full cluster admin for portfolio owner
+
+    # Example: Add team members here
+    # - userarn: arn:aws:iam::ACCOUNT_ID:user/jane.doe
+    #   username: jane.doe
+    #   groups:
+    #     - eks-sre-team
+
+---
+# =============================================================================
+# HOW TO APPLY THIS:
+# =============================================================================
+# 1. Replace ACCOUNT_ID with your actual AWS Account ID
+# 2. Replace XXXXXXXX in SSO role names with your actual SSO assignment IDs
+# 3. Apply:
+#    kubectl apply -f aws-auth-configmap.yaml
+#
+# To verify who has access:
+#    kubectl describe configmap aws-auth -n kube-system
+#
+# To test access as a specific user:
+#    kubectl auth can-i list pods --namespace=default --as=jane.doe
+#    kubectl auth can-i delete pods --namespace=llmops --as-group=eks-sre-team
+#
+# =============================================================================
