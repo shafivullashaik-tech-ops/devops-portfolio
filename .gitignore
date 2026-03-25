@@ -9,6 +9,10 @@
 **/override.tf.json
 **/*_override.tf
 **/*_override.tf.json
+# Terraform plan files — binary, never commit
+**/*.tfplan
+**/destroy.tfplan
+**/tfplan
 
 # Sensitive files - NEVER commit these!
 **/*.pem

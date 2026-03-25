@@ -1,236 +1,20 @@
 ---
 # =============================================================================
-# HIGH AVAILABILITY — Topology Spread + Anti-Affinity + Resource Management
+# HA CONFIGURATION — ResourceQuota + LimitRange (Namespace Guardrails)
 # =============================================================================
-# These patches ensure pods are ALWAYS spread across:
-#   - Multiple Availability Zones (AZ failure protection)
-#   - Multiple Nodes (node failure protection)
+# NOTE: Deployment topology spread constraints (anti-affinity, topologySpread)
+# are defined INSIDE each app's own Helm chart / k8s manifest:
+#   - llmops-rag-gateway/k8s/deployment.yaml     ← llm-gateway topology
+#   - app-microservice-demo/helm/values.yaml      ← demo-app topology
 #
-# HA Stack for each critical app:
-#   1. minReplicas: 2+        → never single point of failure
-#   2. topologySpreadConstraints → spread across AZs and nodes
-#   3. podAntiAffinity        → never 2 pods on same node (preferred)
-#   4. PodDisruptionBudget    → safe during node drain (in pdb file)
-#   5. KEDA ScaledObject      → auto-scale on business metrics
-#   6. Karpenter NodePool     → instant new nodes when needed
+# This file ONLY contains namespace-level resource guardrails:
+#   ResourceQuota  → cap total CPU/memory per namespace
+#   LimitRange     → set default requests/limits per container
+# These do NOT conflict with ArgoCD-managed Deployments.
 # =============================================================================
 
 ###############################################################################
-# LLM GATEWAY — Full HA Deployment spec patch
-###############################################################################
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: llm-gateway
-  namespace: llmops
-  labels:
-    app: llm-gateway
-    ha.devops-portfolio.io/enabled: "true"
-    rbac.devops-portfolio.io/managed-by: "gitops"
-  annotations:
-    description: "LLM Gateway with full HA: multi-AZ, anti-affinity, resource limits"
-spec:
-  # KEDA manages replicas — but set minimum here as safety net
-  replicas: 2
-
-  strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 2          # Spin up 2 extra pods before terminating old ones
-      maxUnavailable: 0    # ZERO downtime — never remove pod before new one ready
-
-  selector:
-    matchLabels:
-      app: llm-gateway
-
-  template:
-    metadata:
-      labels:
-        app: llm-gateway
-        # Karpenter: target memory-optimized node pool
-        karpenter.sh/capacity-type: "spot"
-      annotations:
-        # Force pod restart when ConfigMap changes
-        kubectl.kubernetes.io/restartedAt: "2026-01-01T00:00:00Z"
-
-    spec:
-      # Graceful shutdown — wait for in-flight LLM requests to complete
-      terminationGracePeriodSeconds: 60
-
-      # Spread across AVAILABILITY ZONES (AZ failure protection)
-      topologySpreadConstraints:
-        - maxSkew: 1
-          topologyKey: topology.kubernetes.io/zone
-          whenUnsatisfiable: DoNotSchedule   # Hard: MUST spread across AZs
-          labelSelector:
-            matchLabels:
-              app: llm-gateway
-        # Spread across NODES (node failure protection)
-        - maxSkew: 1
-          topologyKey: kubernetes.io/hostname
-          whenUnsatisfiable: ScheduleAnyway  # Soft: prefer spread, don't block
-          labelSelector:
-            matchLabels:
-              app: llm-gateway
-
-      # Anti-affinity: prefer not to put 2 LLM pods on same node
-      affinity:
-        podAntiAffinity:
-          # HARD: never on same node if possible
-          preferredDuringSchedulingIgnoredDuringExecution:
-            - weight: 100
-              podAffinityTerm:
-                labelSelector:
-                  matchLabels:
-                    app: llm-gateway
-                topologyKey: kubernetes.io/hostname
-        # Node affinity: prefer memory-optimized nodes
-        nodeAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-            - weight: 80
-              preference:
-                matchExpressions:
-                  - key: node-pool
-                    operator: In
-                    values: ["memory-optimized"]
-
-      # Toleration for memory-optimized node taint
-      tolerations:
-        - key: workload-type
-          value: llm
-          effect: NoSchedule
-          operator: Equal
-
-      containers:
-        - name: llm-gateway
-          image: ACCOUNT_ID.dkr.ecr.us-west-2.amazonaws.com/llm-gateway:latest
-
-          # Resource limits — critical for bin-packing and QoS
-          resources:
-            requests:
-              cpu: "500m"      # Reserve 0.5 CPU
-              memory: "1Gi"    # Reserve 1Gi RAM
-            limits:
-              cpu: "2"         # Max 2 CPUs under load
-              memory: "4Gi"    # Max 4Gi RAM (LLM needs memory)
-
-          # Readiness probe — only send traffic when app is fully ready
-          readinessProbe:
-            httpGet:
-              path: /health
-              port: 8000
-            initialDelaySeconds: 10
-            periodSeconds: 5
-            failureThreshold: 3
-            successThreshold: 1
-
-          # Liveness probe — restart if app hangs
-          livenessProbe:
-            httpGet:
-              path: /health
-              port: 8000
-            initialDelaySeconds: 30
-            periodSeconds: 10
-            failureThreshold: 5    # Give LLM time to recover
-
-          # Startup probe — allow slow startup for large model loading
-          startupProbe:
-            httpGet:
-              path: /health
-              port: 8000
-            failureThreshold: 30   # 5 min for model to load (30 × 10s)
-            periodSeconds: 10
-
----
-###############################################################################
-# DEMO APP — HA Deployment spec patch
-###############################################################################
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: demo-app
-  namespace: default
-  labels:
-    app: demo-app
-    ha.devops-portfolio.io/enabled: "true"
-    rbac.devops-portfolio.io/managed-by: "gitops"
-spec:
-  replicas: 2
-
-  strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0   # Zero downtime rolling update
-
-  selector:
-    matchLabels:
-      app: demo-app
-
-  template:
-    metadata:
-      labels:
-        app: demo-app
-
-    spec:
-      terminationGracePeriodSeconds: 30
-
-      # Spread across AZs
-      topologySpreadConstraints:
-        - maxSkew: 1
-          topologyKey: topology.kubernetes.io/zone
-          whenUnsatisfiable: DoNotSchedule
-          labelSelector:
-            matchLabels:
-              app: demo-app
-        - maxSkew: 1
-          topologyKey: kubernetes.io/hostname
-          whenUnsatisfiable: ScheduleAnyway
-          labelSelector:
-            matchLabels:
-              app: demo-app
-
-      affinity:
-        podAntiAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-            - weight: 100
-              podAffinityTerm:
-                labelSelector:
-                  matchLabels:
-                    app: demo-app
-                topologyKey: kubernetes.io/hostname
-
-      containers:
-        - name: demo-app
-          image: ACCOUNT_ID.dkr.ecr.us-west-2.amazonaws.com/demo-app:latest
-
-          resources:
-            requests:
-              cpu: "100m"
-              memory: "128Mi"
-            limits:
-              cpu: "500m"
-              memory: "512Mi"
-
-          readinessProbe:
-            httpGet:
-              path: /health
-              port: 3000
-            initialDelaySeconds: 5
-            periodSeconds: 5
-            failureThreshold: 3
-
-          livenessProbe:
-            httpGet:
-              path: /health
-              port: 3000
-            initialDelaySeconds: 15
-            periodSeconds: 10
-            failureThreshold: 3
-
----
-###############################################################################
-# RESOURCE QUOTA — Prevent any namespace from hogging all cluster resources
+# RESOURCE QUOTA — llmops namespace
 ###############################################################################
 apiVersion: v1
 kind: ResourceQuota
@@ -238,9 +22,10 @@ metadata:
   name: llmops-quota
   namespace: llmops
   labels:
+    app.kubernetes.io/managed-by: argocd
     rbac.devops-portfolio.io/managed-by: "gitops"
   annotations:
-    description: "Prevent llmops namespace from consuming all cluster resources"
+    description: "Prevents llmops namespace from consuming all cluster resources"
 spec:
   hard:
     requests.cpu: "20"
@@ -250,15 +35,22 @@ spec:
     pods: "50"
     services: "20"
     persistentvolumeclaims: "10"
+    count/deployments.apps: "20"
 
 ---
+###############################################################################
+# RESOURCE QUOTA — default namespace (demo-app)
+###############################################################################
 apiVersion: v1
 kind: ResourceQuota
 metadata:
   name: default-quota
   namespace: default
   labels:
+    app.kubernetes.io/managed-by: argocd
     rbac.devops-portfolio.io/managed-by: "gitops"
+  annotations:
+    description: "Prevents default namespace from consuming all cluster resources"
 spec:
   hard:
     requests.cpu: "10"
@@ -267,10 +59,12 @@ spec:
     limits.memory: "40Gi"
     pods: "30"
     services: "10"
+    count/deployments.apps: "10"
 
 ---
 ###############################################################################
-# LIMIT RANGE — Set default resource limits for pods that don't specify them
+# LIMIT RANGE — llmops namespace
+# Sets DEFAULT resource requests/limits for containers that don't specify them
 ###############################################################################
 apiVersion: v1
 kind: LimitRange
@@ -278,33 +72,37 @@ metadata:
   name: llmops-limitrange
   namespace: llmops
   labels:
+    app.kubernetes.io/managed-by: argocd
     rbac.devops-portfolio.io/managed-by: "gitops"
   annotations:
-    description: "Default resource limits for any pod in llmops namespace"
+    description: "Default resource limits for containers in llmops namespace"
 spec:
   limits:
-    # Default container limits (applied if not specified)
     - type: Container
-      default:
+      default:           # Applied if container doesn't set limits
         cpu: "1"
         memory: "1Gi"
-      defaultRequest:
+      defaultRequest:    # Applied if container doesn't set requests
         cpu: "100m"
         memory: "256Mi"
-      max:
+      max:               # Hard cap per container
         cpu: "4"
         memory: "8Gi"
-      min:
+      min:               # Minimum allowed
         cpu: "50m"
         memory: "64Mi"
 
 ---
+###############################################################################
+# LIMIT RANGE — default namespace (demo-app)
+###############################################################################
 apiVersion: v1
 kind: LimitRange
 metadata:
   name: default-limitrange
   namespace: default
   labels:
+    app.kubernetes.io/managed-by: argocd
     rbac.devops-portfolio.io/managed-by: "gitops"
 spec:
   limits:
@@ -321,3 +119,31 @@ spec:
       min:
         cpu: "10m"
         memory: "32Mi"
+
+---
+###############################################################################
+# LIMIT RANGE — monitoring namespace
+###############################################################################
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: monitoring-limitrange
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/managed-by: argocd
+    rbac.devops-portfolio.io/managed-by: "gitops"
+spec:
+  limits:
+    - type: Container
+      default:
+        cpu: "500m"
+        memory: "1Gi"
+      defaultRequest:
+        cpu: "100m"
+        memory: "256Mi"
+      max:
+        cpu: "4"
+        memory: "16Gi"
+      min:
+        cpu: "50m"
+        memory: "64Mi"

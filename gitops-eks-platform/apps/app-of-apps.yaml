@@ -1,6 +1,7 @@
-# App-of-Apps Pattern
-# This is the root application that manages all other applications
-
+# =============================================================================
+# App-of-Apps — Root ArgoCD Application
+# Manages ALL platform services and applications via GitOps
+# =============================================================================
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -8,18 +9,17 @@ metadata:
   namespace: argocd
   finalizers:
     - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/managed-by: argocd
 spec:
   project: default
-
   source:
     repoURL: https://github.com/shafivullashaik-tech-ops/devops-portfolio.git
     targetRevision: feature/llmops-rag-gateway
     path: gitops-eks-platform/apps
-
   destination:
     server: https://kubernetes.default.svc
     namespace: argocd
-
   syncPolicy:
     automated:
       prune: true

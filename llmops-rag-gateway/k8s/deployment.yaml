@@ -202,23 +202,3 @@ spec:
           averageUtilization: 80
 
 ---
-# Secret template — populate with real values via Sealed Secrets or External Secrets Operator
-# kubectl create secret generic llm-gateway-secrets \
-#   --from-literal=openai-api-key=sk-... \
-#   --from-literal=jwt-secret=<strong-random-string> \
-#   --from-literal=database-url=postgresql://... \
-#   --namespace=llmops
-apiVersion: v1
-kind: Secret
-metadata:
-  name: llm-gateway-secrets
-  namespace: llmops
-  annotations:
-    # Use External Secrets Operator in production to pull from AWS Secrets Manager
-    # (aws-platform-infra/terraform/modules/iam/ grants access)
-    externalsecrets.io/source: "aws-secrets-manager"
-type: Opaque
-stringData:
-  openai-api-key: "REPLACE_WITH_REAL_KEY"
-  jwt-secret: "REPLACE_WITH_STRONG_SECRET"
-  database-url: "REPLACE_WITH_RDS_URL"

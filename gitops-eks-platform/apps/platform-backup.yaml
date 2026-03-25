@@ -1,0 +1,51 @@
+---
+# Velero — Backup & Disaster Recovery
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: velero
+  namespace: argocd
+  finalizers: [resources-finalizer.argocd.argoproj.io]
+  labels:
+    app.kubernetes.io/component: "backup-dr"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/shafivullashaik-tech-ops/devops-portfolio.git
+    targetRevision: feature/llmops-rag-gateway
+    path: gitops-eks-platform/platform-services/velero
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: velero
+  syncPolicy:
+    automated: {prune: true, selfHeal: true}
+    syncOptions: [CreateNamespace=true]
+
+---
+# RBAC — Cluster Roles and Bindings
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: platform-rbac
+  namespace: argocd
+  finalizers: [resources-finalizer.argocd.argoproj.io]
+  labels:
+    app.kubernetes.io/component: "rbac"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/shafivullashaik-tech-ops/devops-portfolio.git
+    targetRevision: feature/llmops-rag-gateway
+    path: gitops-eks-platform/rbac
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kube-system
+  syncPolicy:
+    automated: {prune: false, selfHeal: true}  # prune:false for RBAC — safety
+    syncOptions: [CreateNamespace=true, ServerSideApply=true]
+  ignoreDifferences:
+    - group: ""
+      kind: ConfigMap
+      name: aws-auth
+      namespace: kube-system
+      jsonPointers: [/data]  # Don't overwrite aws-auth managed by EKS
