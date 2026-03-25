@@ -164,7 +164,7 @@ metadata:
     app: llm-gateway
     team: platform
 spec:
-  type: ClusterIP
+  type: LoadBalancer
   selector:
     app: llm-gateway
   ports:

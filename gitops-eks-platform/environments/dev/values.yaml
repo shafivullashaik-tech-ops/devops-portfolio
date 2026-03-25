@@ -9,7 +9,7 @@ image:
   pullPolicy: Always
 
 service:
-  type: ClusterIP
+  type: LoadBalancer
   port: 3000
 
 ingress:
