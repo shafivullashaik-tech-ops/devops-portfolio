@@ -1,0 +1,208 @@
+---
+# =============================================================================
+# FALCO — Runtime Security Threat Detection
+# =============================================================================
+# Kyverno/RBAC = controls what CAN happen (admission time)
+# Falco         = detects what IS happening RIGHT NOW (runtime)
+#
+# Falco monitors kernel syscalls in real-time and alerts when:
+#   - A shell is opened inside a container (kubectl exec attack)
+#   - A container reads /etc/passwd or /etc/shadow
+#   - A container writes to /etc, /bin, /usr (unexpected)
+#   - A process makes unexpected network connections
+#   - Privilege escalation attempt detected
+#   - Sensitive file reads (AWS credentials, SSH keys)
+#
+# Think of Falco as a CCTV camera for your cluster at runtime.
+# =============================================================================
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: falco
+  namespace: argocd
+  labels:
+    app.kubernetes.io/component: "runtime-security"
+    rbac.devops-portfolio.io/managed-by: "gitops"
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: default
+  source:
+    repoURL: https://falcosecurity.github.io/charts
+    chart: falco
+    targetRevision: "4.0.0"
+    helm:
+      values: |
+        # Falco runs as a DaemonSet — one pod per node
+        # Uses eBPF driver (modern, no kernel module needed)
+        driver:
+          kind: ebpf             # eBPF = safer than kernel module on EKS
+
+        # Falco rules — what to monitor
+        falco:
+          rules_file:
+            - /etc/falco/falco_rules.yaml
+            - /etc/falco/falco_rules.local.yaml
+            - /etc/falco/k8s_audit_rules.yaml
+
+          # Send alerts to stdout (collected by Loki via Promtail)
+          json_output: true
+          log_stderr: true
+          log_syslog: false
+
+          # Alert output channels
+          outputs:
+            rate: 1
+            max_burst: 1000
+
+          # Minimum priority to alert on
+          # emergency, alert, critical, error, warning, notice, info, debug
+          priority: warning
+
+        # Falco Sidekick — fan-out alerts to multiple destinations
+        falcosidekick:
+          enabled: true
+          replicaCount: 2
+          config:
+            # Send alerts to Slack
+            slack:
+              webhookurl: ""   # Set in External Secret
+              outputformat: "all"
+              minimumpriority: "error"
+            # Send to custom webhook (AlertManager)
+            webhook:
+              address: "http://kube-prometheus-stack-alertmanager.monitoring.svc:9093"
+              minimumpriority: "warning"
+            # Send to Loki for log aggregation
+            loki:
+              hostport: "http://loki-gateway.monitoring.svc:80"
+              minimumpriority: "warning"
+              extralabels: "app:falco,cluster:devops-portfolio-eks"
+
+        # Prometheus metrics from Falco
+        serviceMonitor:
+          create: true
+          namespace: monitoring
+
+        # Resources — DaemonSet runs on every node
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+
+        # Tolerate all node taints (must run everywhere for security)
+        tolerations:
+          - effect: NoSchedule
+            operator: Exists
+          - effect: NoExecute
+            operator: Exists
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: falco
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+
+---
+# =============================================================================
+# FALCO Custom Rules — Enterprise-specific security rules
+# =============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: falco-custom-rules
+  namespace: falco
+  labels:
+    rbac.devops-portfolio.io/managed-by: "gitops"
+  annotations:
+    description: "Custom Falco rules for DevOps Portfolio cluster"
+data:
+  custom_rules.yaml: |
+    # ==========================================================================
+    # CUSTOM RULE 1: Alert when shell is spawned in LLM Gateway container
+    # Attack vector: If attacker compromises LLM pod and opens shell
+    # ==========================================================================
+    - rule: Shell Spawned in LLM Gateway
+      desc: A shell was spawned inside the llm-gateway container — possible intrusion
+      condition: >
+        spawned_process and
+        container and
+        container.name contains "llm-gateway" and
+        proc.name in (shell_binaries)
+      output: >
+        Shell spawned in LLM Gateway container
+        (user=%user.name container=%container.name
+         image=%container.image.repository:%container.image.tag
+         shell=%proc.name parent=%proc.pname cmdline=%proc.cmdline)
+      priority: CRITICAL
+      tags: [llmops, intrusion, shell]
+
+    # ==========================================================================
+    # CUSTOM RULE 2: Detect AWS credential file access in containers
+    # Attack vector: Container tries to steal AWS credentials
+    # ==========================================================================
+    - rule: AWS Credentials Accessed in Container
+      desc: A process inside a container accessed AWS credential files
+      condition: >
+        open_read and
+        container and
+        fd.name in (/root/.aws/credentials, /home/.aws/credentials,
+                    /.aws/credentials, /etc/aws/credentials)
+      output: >
+        AWS credentials file accessed inside container
+        (user=%user.name container=%container.name
+         file=%fd.name proc=%proc.name image=%container.image.repository)
+      priority: CRITICAL
+      tags: [aws, credentials, container-escape]
+
+    # ==========================================================================
+    # CUSTOM RULE 3: Unexpected outbound connection from LLM Gateway
+    # Attack vector: Data exfiltration or C2 communication
+    # ==========================================================================
+    - rule: Unexpected Outbound Connection from LLM Gateway
+      desc: LLM Gateway made an unexpected outbound network connection
+      condition: >
+        outbound and
+        container and
+        container.name contains "llm-gateway" and
+        not (
+          fd.rip in (allowed_llm_endpoints) or
+          fd.sport in (443, 80, 6379, 8000)
+        )
+      output: >
+        Unexpected outbound connection from LLM Gateway
+        (container=%container.name dest_ip=%fd.rip dest_port=%fd.rport
+         proc=%proc.name user=%user.name)
+      priority: WARNING
+      tags: [network, llmops, exfiltration]
+
+    # ==========================================================================
+    # CUSTOM RULE 4: Detect kubectl exec into production pods
+    # Ops concern: who is exec-ing into production? Audit trail.
+    # ==========================================================================
+    - rule: Kubectl Exec Into Production Pod
+      desc: Someone exec-ed into a production pod — audit event
+      condition: >
+        ka.verb = exec and
+        ka.target.namespace in (llmops, default) and
+        not ka.user.name in (system:serviceaccount:kube-system:daemon-set-controller)
+      output: >
+        kubectl exec into production pod
+        (user=%ka.user.name pod=%ka.target.name
+         namespace=%ka.target.namespace container=%ka.req.container.name)
+      priority: WARNING
+      tags: [audit, kubectl, production]
+      source: k8s_audit
+
+    # Macro: approved LLM API endpoints
+    - macro: allowed_llm_endpoints
+      condition: >
+        fd.rip in ("api.openai.com", "api.anthropic.com", "ollama.local")

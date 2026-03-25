@@ -1,0 +1,128 @@
+---
+# =============================================================================
+# VELERO — Backup & Disaster Recovery
+# =============================================================================
+# Enterprise requirement: If cluster is deleted/corrupted, restore in minutes.
+#
+# Velero backs up:
+#   - All Kubernetes objects (Deployments, Services, ConfigMaps, Secrets)
+#   - Persistent Volume data (EBS snapshots)
+#   - Namespace-level or cluster-level
+#
+# RPO (Recovery Point Objective): How much data can you lose? → 1 hour
+# RTO (Recovery Time Objective): How fast can you recover? → 30 minutes
+# =============================================================================
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: velero
+  namespace: argocd
+  labels:
+    app.kubernetes.io/component: "backup-dr"
+    rbac.devops-portfolio.io/managed-by: "gitops"
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: default
+  source:
+    repoURL: https://vmware-tanzu.github.io/helm-charts
+    chart: velero
+    targetRevision: "6.0.0"
+    helm:
+      values: |
+        # IRSA — Velero needs S3 write + EBS snapshot permissions
+        serviceAccount:
+          server:
+            annotations:
+              eks.amazonaws.com/role-arn: "arn:aws:iam::ACCOUNT_ID:role/velero-irsa-role"
+
+        # AWS plugin for EBS volume snapshots
+        initContainers:
+          - name: velero-plugin-for-aws
+            image: velero/velero-plugin-for-aws:v1.9.0
+            imagePullPolicy: IfNotPresent
+            volumeMounts:
+              - mountPath: /target
+                name: plugins
+
+        # Backup storage location — S3 bucket
+        configuration:
+          backupStorageLocation:
+            - name: default
+              provider: aws
+              bucket: devops-portfolio-velero-backups
+              prefix: eks-backups
+              config:
+                region: us-west-2
+                s3ForcePathStyle: "false"
+
+          # Volume snapshot location — EBS snapshots
+          volumeSnapshotLocation:
+            - name: default
+              provider: aws
+              config:
+                region: us-west-2
+
+          # Default backup TTL — keep backups for 30 days
+          defaultBackupTTL: 720h0m0s
+
+        # HA: 2 replicas
+        deployNodeAgent: true   # DaemonSet for volume backups
+        nodeAgent:
+          podDisruptionBudget:
+            minAvailable: 1
+
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+
+        # Prometheus metrics
+        metrics:
+          enabled: true
+          serviceMonitor:
+            enabled: true
+            namespace: monitoring
+
+        # Backup schedules
+        schedules:
+          # Full cluster backup every hour
+          hourly-backup:
+            disabled: false
+            schedule: "0 * * * *"   # Every hour
+            template:
+              ttl: 168h              # Keep 7 days of hourly backups
+              includedNamespaces:
+                - default
+                - llmops
+                - monitoring
+                - jenkins
+                - argocd
+              storageLocation: default
+              volumeSnapshotLocations:
+                - default
+              snapshotVolumes: true
+
+          # Daily full backup at midnight
+          daily-backup:
+            disabled: false
+            schedule: "0 0 * * *"   # Daily at midnight
+            template:
+              ttl: 720h              # Keep 30 days of daily backups
+              includedNamespaces: []  # Empty = ALL namespaces
+              storageLocation: default
+              snapshotVolumes: true
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: velero
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

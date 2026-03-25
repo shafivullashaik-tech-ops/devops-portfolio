@@ -1,0 +1,152 @@
+---
+# =============================================================================
+# CERT-MANAGER — Automatic TLS Certificate Management
+# =============================================================================
+# Automatically provisions, renews, and manages TLS certificates.
+# Integrates with Let's Encrypt (free), AWS ACM, or private CAs.
+#
+# Without cert-manager: Manual certificate rotation every 90 days = human error
+# With cert-manager: Fully automated, zero-touch certificate lifecycle
+# =============================================================================
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cert-manager
+  namespace: argocd
+  labels:
+    app.kubernetes.io/component: "certificate-management"
+    rbac.devops-portfolio.io/managed-by: "gitops"
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: default
+  source:
+    repoURL: https://charts.jetstack.io
+    chart: cert-manager
+    targetRevision: "v1.14.0"
+    helm:
+      values: |
+        # Install CRDs
+        installCRDs: true
+
+        # HA: 2 replicas
+        replicaCount: 2
+
+        # IRSA for Route53 DNS-01 challenge (wildcard certificates)
+        serviceAccount:
+          annotations:
+            eks.amazonaws.com/role-arn: "arn:aws:iam::ACCOUNT_ID:role/cert-manager-irsa-role"
+
+        affinity:
+          podAntiAffinity:
+            preferredDuringSchedulingIgnoredDuringExecution:
+              - weight: 100
+                podAffinityTerm:
+                  labelSelector:
+                    matchLabels:
+                      app.kubernetes.io/name: cert-manager
+                  topologyKey: kubernetes.io/hostname
+
+        webhook:
+          replicaCount: 2
+
+        cainjector:
+          replicaCount: 2
+
+        # Prometheus metrics
+        prometheus:
+          enabled: true
+          servicemonitor:
+            enabled: true
+            prometheusInstance: monitoring
+
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: cert-manager
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+
+---
+# =============================================================================
+# ClusterIssuer — Let's Encrypt Production (ACME DNS-01 via Route53)
+# =============================================================================
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+  labels:
+    rbac.devops-portfolio.io/managed-by: "gitops"
+  annotations:
+    description: "Let's Encrypt production issuer using Route53 DNS-01 challenge"
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: admin@devops-portfolio.io    # Your email for expiry notifications
+    privateKeySecretRef:
+      name: letsencrypt-prod-account-key
+    solvers:
+      # DNS-01 challenge via Route53 (supports wildcard certs *.domain.com)
+      - dns01:
+          route53:
+            region: us-west-2
+            # IRSA handles authentication — no credentials needed here
+        selector:
+          dnsZones:
+            - "devops-portfolio.io"
+
+---
+# ClusterIssuer — Let's Encrypt Staging (for testing)
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-staging
+  labels:
+    rbac.devops-portfolio.io/managed-by: "gitops"
+spec:
+  acme:
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    email: admin@devops-portfolio.io
+    privateKeySecretRef:
+      name: letsencrypt-staging-account-key
+    solvers:
+      - dns01:
+          route53:
+            region: us-west-2
+
+---
+# =============================================================================
+# Certificate — Wildcard TLS cert for all services
+# =============================================================================
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: devops-portfolio-wildcard
+  namespace: istio-system    # Or ingress-nginx namespace
+  labels:
+    rbac.devops-portfolio.io/managed-by: "gitops"
+  annotations:
+    description: "Wildcard TLS cert covering *.devops-portfolio.io"
+spec:
+  secretName: devops-portfolio-wildcard-tls
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  dnsNames:
+    - "devops-portfolio.io"
+    - "*.devops-portfolio.io"   # Wildcard covers all subdomains
+  duration: 2160h               # 90 days
+  renewBefore: 360h             # Renew 15 days before expiry
