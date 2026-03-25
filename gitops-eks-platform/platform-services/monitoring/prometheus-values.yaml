@@ -24,7 +24,7 @@ spec:
         values: |
           grafana:
             persistence:
-              storageClassName: gp2
+              enabled: false
             adminPassword: "Admin@1234!"
           prometheus:
             prometheusSpec:
