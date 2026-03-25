@@ -10,13 +10,20 @@ metadata:
 spec:
   project: default
 
-  source:
-    repoURL: https://github.com/shafivullashaik-tech-ops/devops-portfolio.git
-    targetRevision: main
-    path: app-microservice-demo/helm
-    helm:
-      valueFiles:
-        - gitops-eks-platform/environments/dev/values.yaml
+  sources:
+    # Source 1: Helm chart
+    - repoURL: https://github.com/shafivullashaik-tech-ops/devops-portfolio.git
+      targetRevision: feature/llmops-rag-gateway
+      path: app-microservice-demo/helm
+      helm:
+        releaseName: demo-app
+        valueFiles:
+          - $values/gitops-eks-platform/environments/dev/values.yaml
+
+    # Source 2: Values files from Git repo (referenced as $values above)
+    - repoURL: https://github.com/shafivullashaik-tech-ops/devops-portfolio.git
+      targetRevision: feature/llmops-rag-gateway
+      ref: values
 
   destination:
     server: https://kubernetes.default.svc
