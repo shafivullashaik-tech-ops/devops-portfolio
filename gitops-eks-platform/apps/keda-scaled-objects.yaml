@@ -1,0 +1,33 @@
+---
+# KEDA ScaledObjects — deploys after KEDA operator is running
+# This is separate from the keda operator app to ensure correct install order
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: keda-scaled-objects
+  namespace: argocd
+  finalizers: [resources-finalizer.argocd.argoproj.io]
+  labels:
+    app.kubernetes.io/component: "pod-autoscaling"
+  annotations:
+    argocd.argoproj.io/sync-wave: "5"   # Apply AFTER keda operator (wave 0)
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/shafivullashaik-tech-ops/devops-portfolio.git
+    targetRevision: feature/llmops-rag-gateway
+    path: gitops-eks-platform/platform-services/keda
+    directory:
+      include: "scaled-objects.yaml"   # Only sync ScaledObjects, not keda-install.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: keda
+  syncPolicy:
+    automated: {prune: true, selfHeal: true}
+    syncOptions: [CreateNamespace=true]
+    retry:
+      limit: 5
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 5m

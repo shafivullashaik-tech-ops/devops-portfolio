@@ -1,18 +1,17 @@
 ---
 # =============================================================================
-# KEDA ScaledObjects — Event-driven autoscaling for all applications
+# KEDA ScaledObjects — Event-driven autoscaling for applications
 # =============================================================================
-# ScaledObject = KEDA's way of saying "watch THIS metric, scale THIS deployment"
-# It creates/manages an HPA behind the scenes automatically.
+# NOTE: Only scale workloads that:
+#   1. Exist in the cluster
+#   2. Don't already have a conflicting HPA
 #
-# Scale triggers used:
-#   - Prometheus: scale on HTTP request rate, queue depth, custom metrics
-#   - CPU/Memory: fallback trigger alongside Prometheus
-#   - Cron: predictive scaling for known traffic patterns
+# Jenkins is a StatefulSet managed by Jenkins Helm chart — skip KEDA for it
+# llm-gateway has its own HPA in k8s/deployment.yaml — KEDA extends it here
 # =============================================================================
 
 ###############################################################################
-# LLM GATEWAY — Scale on HTTP request rate + LLM queue depth
+# LLM GATEWAY — Scale on HTTP request rate via Prometheus
 ###############################################################################
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
@@ -21,86 +20,64 @@ metadata:
   namespace: llmops
   labels:
     app: llm-gateway
-    scaledobject.keda.sh/name: llm-gateway-scaledobject
   annotations:
-    description: "Scale llm-gateway based on HTTP req/sec and pending LLM requests"
+    description: "Scale llm-gateway based on HTTP req/sec from Prometheus"
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
     name: llm-gateway
 
-  # HA: always keep minimum 2 pods (zero-downtime guarantee)
   minReplicaCount: 2
-  maxReplicaCount: 20
-
-  # Wait 3 minutes before scaling down (LLM requests can be slow)
+  maxReplicaCount: 10
   cooldownPeriod: 180
-
-  # How often KEDA checks the metrics
   pollingInterval: 15
 
-  # Advanced HPA behaviour
+  # Tell KEDA to manage the existing HPA (don't create a new one)
   advanced:
-    restoreToOriginalReplicaCount: false
     horizontalPodAutoscalerConfig:
       behavior:
         scaleUp:
-          stabilizationWindowSeconds: 30    # Scale up fast (30s)
+          stabilizationWindowSeconds: 30
           policies:
             - type: Pods
-              value: 4                      # Add max 4 pods at once
+              value: 2
               periodSeconds: 60
         scaleDown:
-          stabilizationWindowSeconds: 180  # Scale down slowly (3 min)
+          stabilizationWindowSeconds: 180
           policies:
             - type: Pods
-              value: 2                      # Remove max 2 pods at once
+              value: 1
               periodSeconds: 60
 
   triggers:
-    # Trigger 1: HTTP Request Rate (scale when > 50 req/sec per pod)
+    # Scale on HTTP request rate
     - type: prometheus
       metadata:
         serverAddress: http://kube-prometheus-stack-prometheus.monitoring.svc:9090
         metricName: llm_gateway_http_requests_per_second
         query: |
           sum(rate(http_requests_total{namespace="llmops",app="llm-gateway"}[2m]))
-        threshold: "50"        # Scale up when total req/sec > 50
-        activationThreshold: "5"  # Activate KEDA only when > 5 req/sec
+        threshold: "50"
+        activationThreshold: "5"
 
-    # Trigger 2: LLM Request Queue Depth (pending inference requests)
-    - type: prometheus
-      metadata:
-        serverAddress: http://kube-prometheus-stack-prometheus.monitoring.svc:9090
-        metricName: llm_gateway_pending_requests
-        query: |
-          sum(llm_gateway_pending_requests{namespace="llmops"})
-        threshold: "10"        # Scale up when > 10 requests pending per pod
-
-    # Trigger 3: CPU fallback (still scale on CPU if Prometheus unavailable)
+    # CPU fallback
     - type: cpu
       metricType: Utilization
       metadata:
-        value: "70"            # Scale up if CPU > 70%
+        value: "70"
 
-    # Trigger 4: Memory
-    - type: memory
-      metricType: Utilization
-      metadata:
-        value: "80"            # Scale up if memory > 80%
-
-    # Trigger 5: Predictive/Cron scaling — pre-scale before business hours
+    # Business hours pre-scaling (IST)
     - type: cron
       metadata:
         timezone: "Asia/Calcutta"
-        start: "0 8 * * 1-5"   # 8:00 AM Mon-Fri — scale up for business hours
-        end: "0 20 * * 1-5"    # 8:00 PM Mon-Fri — scale down after hours
-        desiredReplicas: "5"   # Pre-warm 5 pods at start of business
+        start: "0 8 * * 1-5"
+        end: "0 20 * * 1-5"
+        desiredReplicas: "3"
 
 ---
 ###############################################################################
-# DEMO APP — Scale on HTTP request rate + Prometheus
+# DEMO APP — Scale on HTTP request rate
 ###############################################################################
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
@@ -117,29 +94,12 @@ spec:
     kind: Deployment
     name: demo-app
 
-  minReplicaCount: 2           # HA: always minimum 2
-  maxReplicaCount: 10
+  minReplicaCount: 2
+  maxReplicaCount: 5
   cooldownPeriod: 120
   pollingInterval: 15
 
-  advanced:
-    horizontalPodAutoscalerConfig:
-      behavior:
-        scaleUp:
-          stabilizationWindowSeconds: 15
-          policies:
-            - type: Pods
-              value: 3
-              periodSeconds: 60
-        scaleDown:
-          stabilizationWindowSeconds: 120
-          policies:
-            - type: Pods
-              value: 1
-              periodSeconds: 60
-
   triggers:
-    # HTTP request rate
     - type: prometheus
       metadata:
         serverAddress: http://kube-prometheus-stack-prometheus.monitoring.svc:9090
@@ -149,53 +109,14 @@ spec:
         threshold: "30"
         activationThreshold: "2"
 
-    # CPU fallback
     - type: cpu
       metricType: Utilization
       metadata:
         value: "70"
 
-    # Business hours pre-scaling
-    - type: cron
-      metadata:
-        timezone: "Asia/Calcutta"
-        start: "0 9 * * 1-5"
-        end: "0 18 * * 1-5"
-        desiredReplicas: "3"
-
 ---
 ###############################################################################
-# JENKINS — Scale agent pods based on build queue
-###############################################################################
-apiVersion: keda.sh/v1alpha1
-kind: ScaledObject
-metadata:
-  name: jenkins-scaledobject
-  namespace: jenkins
-  labels:
-    app: jenkins
-  annotations:
-    description: "Scale Jenkins agents based on build queue depth"
-spec:
-  scaleTargetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: jenkins
-
-  minReplicaCount: 1           # Jenkins master: always 1
-  maxReplicaCount: 1           # Jenkins master is singleton (not scaled)
-  cooldownPeriod: 300
-
-  triggers:
-    # Keep Jenkins master at 1 — use Kubernetes plugin for agent pods
-    - type: cpu
-      metricType: Utilization
-      metadata:
-        value: "85"
-
----
-###############################################################################
-# KEDA TriggerAuthentication — Prometheus auth (if needed in prod)
+# KEDA TriggerAuthentication — For Prometheus (no extra auth needed for internal)
 ###############################################################################
 apiVersion: keda.sh/v1alpha1
 kind: ClusterTriggerAuthentication
@@ -203,13 +124,8 @@ metadata:
   name: prometheus-trigger-auth
   namespace: keda
   annotations:
-    description: "Authentication for KEDA to query Prometheus (used if Prometheus has auth)"
+    description: "No-op auth for internal cluster Prometheus (no auth needed)"
 spec:
-  # For open Prometheus (no auth) — this is a placeholder
-  # For secured Prometheus, add:
-  # secretTargetRef:
-  #   - parameter: bearerToken
-  #     name: prometheus-token-secret
-  #     key: token
+  # AWS EKS pod identity — uses IRSA/service account for auth
   podIdentity:
-    provider: none  # No auth needed for internal cluster Prometheus
+    provider: aws-eks   # Valid on EKS (was 'none' which is invalid on EKS)
