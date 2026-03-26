@@ -86,13 +86,11 @@ spec:
     helm:
       values: |
         replicas: 1
-        serviceAccount:
-          annotations:
-            eks.amazonaws.com/role-arn: "arn:aws:iam::050451393596:role/karpenter-irsa-role"
+        # IRSA role needs to be created first via Terraform
+        # serviceAccount.annotations will be added once karpenter-irsa-role exists
         settings:
           clusterName: "portfolio-eks-dev"
           clusterEndpoint: "https://0CACF9AA3BAFCF5A367ECCFCA23EE436.gr7.us-west-2.eks.amazonaws.com"
-          interruptionQueueName: "karpenter-interruption-queue"
         resources:
           requests:
             cpu: 100m

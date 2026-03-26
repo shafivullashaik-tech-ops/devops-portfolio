@@ -93,9 +93,9 @@ module "eks" {
   node_groups = {
     general = {
       instance_types = ["t3.medium"]
-      desired_size   = 2
-      min_size       = 1
-      max_size       = 3
+      desired_size   = 3
+      min_size       = 2
+      max_size       = 5
       disk_size      = 30
       capacity_type  = "ON_DEMAND"
 

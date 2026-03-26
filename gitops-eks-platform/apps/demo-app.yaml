@@ -10,20 +10,35 @@ metadata:
 spec:
   project: default
 
-  sources:
-    # Source 1: Helm chart
-    - repoURL: https://github.com/shafivullashaik-tech-ops/devops-portfolio.git
-      targetRevision: feature/llmops-rag-gateway
-      path: app-microservice-demo/helm
-      helm:
-        releaseName: demo-app
-        valueFiles:
-          - $values/gitops-eks-platform/environments/dev/values.yaml
-
-    # Source 2: Values files from Git repo (referenced as $values above)
-    - repoURL: https://github.com/shafivullashaik-tech-ops/devops-portfolio.git
-      targetRevision: feature/llmops-rag-gateway
-      ref: values
+  source:
+    repoURL: https://github.com/shafivullashaik-tech-ops/devops-portfolio.git
+    targetRevision: feature/llmops-rag-gateway
+    path: app-microservice-demo/helm
+    helm:
+      releaseName: demo-app
+      valueFiles:
+        - values.yaml
+      values: |
+        image:
+          repository: 050451393596.dkr.ecr.us-west-2.amazonaws.com/demo-app
+          tag: "latest"
+          pullPolicy: Always
+        service:
+          type: LoadBalancer
+          port: 3000
+        replicaCount: 2
+        resources:
+          limits:
+            cpu: 500m
+            memory: 512Mi
+          requests:
+            cpu: 100m
+            memory: 256Mi
+        env:
+          - name: NODE_ENV
+            value: development
+          - name: LOG_LEVEL
+            value: debug
 
   destination:
     server: https://kubernetes.default.svc
