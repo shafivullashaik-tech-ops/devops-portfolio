@@ -80,7 +80,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: oci://public.ecr.aws/karpenter
+    repoURL: oci://public.ecr.aws/karpenter/karpenter
     chart: karpenter
     targetRevision: "1.3.3"
     helm:
