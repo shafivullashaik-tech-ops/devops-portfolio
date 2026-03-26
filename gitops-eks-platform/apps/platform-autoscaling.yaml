@@ -1,0 +1,93 @@
+---
+# KEDA — Event-Driven Pod Autoscaler (installs from Helm chart repo)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: keda
+  namespace: argocd
+  finalizers: [resources-finalizer.argocd.argoproj.io]
+  labels:
+    app.kubernetes.io/component: "pod-autoscaling"
+spec:
+  project: default
+  source:
+    repoURL: https://kedacore.github.io/charts
+    chart: keda
+    targetRevision: "2.13.0"
+    helm:
+      values: |
+        operator:
+          replicaCount: 1
+        metricsServer:
+          replicaCount: 1
+        webhooks:
+          replicaCount: 1
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: keda
+  syncPolicy:
+    automated: {prune: true, selfHeal: true}
+    syncOptions: [CreateNamespace=true, ServerSideApply=true]
+  ignoreDifferences:
+    - group: admissionregistration.k8s.io
+      kind: ValidatingWebhookConfiguration
+      jsonPointers: [/webhooks]
+
+---
+# VPA — Vertical Pod Autoscaler (installs from Helm chart repo)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: vpa
+  namespace: argocd
+  finalizers: [resources-finalizer.argocd.argoproj.io]
+  labels:
+    app.kubernetes.io/component: "vertical-autoscaling"
+spec:
+  project: default
+  source:
+    repoURL: https://charts.fairwinds.com/stable
+    chart: vpa
+    targetRevision: "3.0.0"
+    helm:
+      values: |
+        recommender:
+          replicaCount: 1
+        updater:
+          replicaCount: 1
+        admissionController:
+          replicaCount: 1
+          generateCertificate: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: vpa
+  syncPolicy:
+    automated: {prune: true, selfHeal: true}
+    syncOptions: [CreateNamespace=true]
+
+---
+# Platform HA — PodDisruptionBudgets + ResourceQuotas (from our Git repo)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: platform-ha
+  namespace: argocd
+  finalizers: [resources-finalizer.argocd.argoproj.io]
+  labels:
+    app.kubernetes.io/component: "high-availability"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/shafivullashaik-tech-ops/devops-portfolio.git
+    targetRevision: feature/llmops-rag-gateway
+    path: gitops-eks-platform/platform-services/ha
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+  syncPolicy:
+    automated: {prune: true, selfHeal: true}
+    syncOptions: [CreateNamespace=true]
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers: [/spec/replicas]

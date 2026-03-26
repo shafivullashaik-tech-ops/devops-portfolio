@@ -1,0 +1,86 @@
+---
+# Velero — Backup & Disaster Recovery (installs from Helm chart repo)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: velero
+  namespace: argocd
+  finalizers: [resources-finalizer.argocd.argoproj.io]
+  labels:
+    app.kubernetes.io/component: "backup-dr"
+spec:
+  project: default
+  source:
+    repoURL: https://vmware-tanzu.github.io/helm-charts
+    chart: velero
+    targetRevision: "6.0.0"
+    helm:
+      values: |
+        serviceAccount:
+          server:
+            annotations:
+              eks.amazonaws.com/role-arn: "arn:aws:iam::050451393596:role/velero-irsa-role"
+        initContainers:
+          - name: velero-plugin-for-aws
+            image: velero/velero-plugin-for-aws:v1.9.0
+            imagePullPolicy: IfNotPresent
+            volumeMounts:
+              - mountPath: /target
+                name: plugins
+        configuration:
+          backupStorageLocation:
+            - name: default
+              provider: aws
+              bucket: devops-portfolio-velero-backups
+              prefix: eks-backups
+              config:
+                region: us-west-2
+          volumeSnapshotLocation:
+            - name: default
+              provider: aws
+              config:
+                region: us-west-2
+        deployNodeAgent: true
+        metrics:
+          enabled: true
+          serviceMonitor:
+            enabled: true
+            namespace: monitoring
+        schedules:
+          daily-backup:
+            disabled: false
+            schedule: "0 0 * * *"
+            template:
+              ttl: 720h
+              includedNamespaces: []
+              storageLocation: default
+              snapshotVolumes: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: velero
+  syncPolicy:
+    automated: {prune: true, selfHeal: true}
+    syncOptions: [CreateNamespace=true]
+
+---
+# Platform RBAC — ClusterRoles + RoleBindings + ServiceAccounts (from our Git repo)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: platform-rbac
+  namespace: argocd
+  finalizers: [resources-finalizer.argocd.argoproj.io]
+  labels:
+    app.kubernetes.io/component: "rbac"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/shafivullashaik-tech-ops/devops-portfolio.git
+    targetRevision: feature/llmops-rag-gateway
+    path: gitops-eks-platform/rbac
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kube-system
+  syncPolicy:
+    automated: {prune: false, selfHeal: true}
+    syncOptions: [CreateNamespace=true, ServerSideApply=true]
