@@ -66,6 +66,48 @@ spec:
     syncOptions: [CreateNamespace=true]
 
 ---
+# Karpenter — Node Autoscaler (installs from Helm chart repo)
+# NOTE: Karpenter requires IRSA + SQS interruption queue pre-configured
+# For dev: skip node pools (Karpenter manages nodes via EC2 API)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: karpenter
+  namespace: argocd
+  finalizers: [resources-finalizer.argocd.argoproj.io]
+  labels:
+    app.kubernetes.io/component: "node-autoscaling"
+spec:
+  project: default
+  source:
+    repoURL: https://charts.karpenter.sh
+    chart: karpenter
+    targetRevision: "v0.37.0"
+    helm:
+      values: |
+        replicas: 1
+        serviceAccount:
+          annotations:
+            eks.amazonaws.com/role-arn: "arn:aws:iam::050451393596:role/karpenter-irsa-role"
+        settings:
+          clusterName: "portfolio-eks-dev"
+          clusterEndpoint: "https://0CACF9AA3BAFCF5A367ECCFCA23EE436.gr7.us-west-2.eks.amazonaws.com"
+          interruptionQueueName: "karpenter-interruption-queue"
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: karpenter
+  syncPolicy:
+    automated: {prune: true, selfHeal: true}
+    syncOptions: [CreateNamespace=true]
+
+---
 # Platform HA — PodDisruptionBudgets + ResourceQuotas (from our Git repo)
 apiVersion: argoproj.io/v1alpha1
 kind: Application
