@@ -116,7 +116,7 @@ spec:
     helm:
       values: |
         driver:
-          kind: ebpf
+          kind: modern_ebpf   # Use modern_ebpf for EKS (ebpf has compat issues)
         falco:
           json_output: true
           priority: warning
