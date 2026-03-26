@@ -78,6 +78,13 @@ resource "aws_eks_cluster" "main" {
     security_group_ids      = [aws_security_group.cluster.id]
   }
 
+  # Enable both auth modes: allows both aws-auth ConfigMap AND Access Entries API
+  # This is required for aws_eks_access_entry resources to work
+  access_config {
+    authentication_mode                         = "API_AND_CONFIG_MAP"
+    bootstrap_cluster_creator_admin_permissions = true
+  }
+
   enabled_cluster_log_types = var.cluster_log_types
 
   dynamic "encryption_config" {
