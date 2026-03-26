@@ -20,6 +20,10 @@ spec:
         releaseName: jenkins
         valueFiles:
           - $values/aws-platform-infra/jenkins/jenkins-values.yaml
+        values: |
+          controller:
+            image:
+              tag: "2.492.1-jdk21"
 
     # Source 2: Values files from Git repo (referenced as $values above)
     - repoURL: https://github.com/shafivullashaik-tech-ops/devops-portfolio.git
