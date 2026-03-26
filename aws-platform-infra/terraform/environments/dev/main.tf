@@ -181,4 +181,38 @@ module "iam" {
   tags = local.common_tags
 }
 
-# Import block removed — node group already destroyed
+################################################################################
+# EKS Access Entries — Permanent aws-auth management via Terraform
+# NEVER manage aws-auth via GitOps/ArgoCD — it breaks node authentication
+################################################################################
+
+# Node group role — required for nodes to join cluster (auto-managed by EKS)
+# EKS automatically adds node group roles, but we explicitly declare for safety
+resource "aws_eks_access_entry" "node_group" {
+  cluster_name  = module.eks.cluster_name
+  principal_arn = module.eks.node_group_role_arn
+  type          = "EC2_LINUX"
+
+  tags = local.common_tags
+}
+
+# Admin user — shafi-terraform (break-glass cluster admin)
+resource "aws_eks_access_entry" "admin_user" {
+  cluster_name  = module.eks.cluster_name
+  principal_arn = "arn:aws:iam::050451393596:user/shafi-terraform"
+  type          = "STANDARD"
+
+  tags = local.common_tags
+}
+
+resource "aws_eks_access_policy_association" "admin_user" {
+  cluster_name  = module.eks.cluster_name
+  principal_arn = "arn:aws:iam::050451393596:user/shafi-terraform"
+  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+
+  access_scope {
+    type = "cluster"
+  }
+
+  depends_on = [aws_eks_access_entry.admin_user]
+}

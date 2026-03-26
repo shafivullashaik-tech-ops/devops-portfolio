@@ -5,8 +5,8 @@ replicaCount: 2
 
 image:
   repository: 050451393596.dkr.ecr.us-west-2.amazonaws.com/demo-app
-  tag: "1.0.0"          # Updated by Jenkins CI on every build — never use latest
-  pullPolicy: IfNotPresent
+  tag: "latest"          # Jenkins CI updates this on every build via GitOps
+  pullPolicy: Always
 
 service:
   type: LoadBalancer

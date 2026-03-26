@@ -23,6 +23,9 @@ spec:
 
 ---
 # RBAC — Cluster Roles and Bindings
+# NOTE: aws-auth ConfigMap is intentionally EXCLUDED from this app.
+# aws-auth is managed by Terraform access_entries (permanent fix).
+# See: aws-platform-infra/terraform/environments/dev/main.tf
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -43,9 +46,11 @@ spec:
   syncPolicy:
     automated: {prune: false, selfHeal: true}  # prune:false for RBAC — safety
     syncOptions: [CreateNamespace=true, ServerSideApply=true]
+  # Ignore aws-auth completely — managed by Terraform, not ArgoCD
   ignoreDifferences:
     - group: ""
       kind: ConfigMap
       name: aws-auth
       namespace: kube-system
-      jsonPointers: [/data]  # Don't overwrite aws-auth managed by EKS
+      jqPathExpressions:
+        - .
