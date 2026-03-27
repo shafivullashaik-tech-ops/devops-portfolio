@@ -1,5 +1,6 @@
 # ArgoCD App-of-Apps entry for LLM Gateway
-# This tells ArgoCD to manage the llm-gateway from llmops-rag-gateway/k8s/
+# Enterprise pattern: KEDA ScaledObject manages HPA lifecycle
+# ArgoCD ignoreDifferences prevents conflict with KEDA-managed HPA
 
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -39,7 +40,16 @@ spec:
         maxDuration: 3m
 
   ignoreDifferences:
+    # Ignore replica count changes (KEDA ScaledObject manages replicas)
     - group: apps
       kind: Deployment
       jsonPointers:
         - /spec/replicas
+    # Enterprise pattern: KEDA owns the HPA lifecycle
+    # KEDA creates HPA named 'keda-hpa-<scaledobject-name>' or same name
+    # ArgoCD must NOT prune/recreate HPAs managed by KEDA
+    - group: autoscaling
+      kind: HorizontalPodAutoscaler
+      namespace: llmops
+      jqPathExpressions:
+        - .
