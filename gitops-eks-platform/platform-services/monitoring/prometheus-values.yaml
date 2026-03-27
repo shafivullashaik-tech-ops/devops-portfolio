@@ -55,3 +55,12 @@ spec:
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
+      - SkipHooks=true
+  ignoreDifferences:
+    # PVC is immutable after creation — ignore spec diffs
+    - group: ""
+      kind: PersistentVolumeClaim
+      jsonPointers:
+        - /spec/storageClassName
+        - /spec/volumeMode
+        - /spec/resources
