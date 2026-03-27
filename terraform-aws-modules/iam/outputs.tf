@@ -22,3 +22,13 @@ output "llm_gateway_irsa_role_arn" {
   description = "ARN of the LLM Gateway IRSA IAM role"
   value       = var.create_llm_gateway_role ? aws_iam_role.llm_gateway_irsa[0].arn : ""
 }
+
+output "karpenter_irsa_role_arn" {
+  description = "ARN of the Karpenter IRSA IAM role"
+  value       = var.create_karpenter_role ? aws_iam_role.karpenter_irsa[0].arn : ""
+}
+
+output "velero_irsa_role_arn" {
+  description = "ARN of the Velero IRSA IAM role"
+  value       = var.create_velero_role ? aws_iam_role.velero_irsa[0].arn : ""
+}

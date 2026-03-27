@@ -178,6 +178,12 @@ module "iam" {
   # LLM Gateway IRSA — read secrets from AWS Secrets Manager
   create_llm_gateway_role = true
 
+  # Karpenter IRSA — provision EC2 nodes
+  create_karpenter_role = true
+
+  # Velero IRSA — backup to S3 + EBS snapshots
+  create_velero_role = true
+
   tags = local.common_tags
 }
 

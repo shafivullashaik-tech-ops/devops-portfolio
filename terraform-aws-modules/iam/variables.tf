@@ -69,6 +69,24 @@ variable "create_llm_gateway_role" {
 }
 
 # ---------------------------------------------------------------------------
+# Karpenter IRSA
+# ---------------------------------------------------------------------------
+variable "create_karpenter_role" {
+  description = "Create IRSA role for Karpenter node provisioner"
+  type        = bool
+  default     = false
+}
+
+# ---------------------------------------------------------------------------
+# Velero IRSA
+# ---------------------------------------------------------------------------
+variable "create_velero_role" {
+  description = "Create IRSA role for Velero backup (S3 + EBS snapshots)"
+  type        = bool
+  default     = false
+}
+
+# ---------------------------------------------------------------------------
 # Common
 # ---------------------------------------------------------------------------
 variable "tags" {
