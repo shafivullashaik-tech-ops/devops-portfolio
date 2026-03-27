@@ -22,6 +22,9 @@ spec:
               eks.amazonaws.com/role-arn: "arn:aws:iam::050451393596:role/portfolio-eks-dev-velero-irsa"
         upgradeCRDs: false
         cleanUpCRDs: false
+        installCRDs: false
+        podAnnotations:
+          "helm.sh/hook-delete-policy": "before-hook-creation,hook-succeeded"
         initContainers:
           - name: velero-plugin-for-aws
             image: velero/velero-plugin-for-aws:v1.8.2
@@ -62,7 +65,7 @@ spec:
     namespace: velero
   syncPolicy:
     automated: {prune: true, selfHeal: true}
-    syncOptions: [CreateNamespace=true]
+    syncOptions: [CreateNamespace=true, SkipHooks=true]
 
 ---
 # Platform RBAC — ClusterRoles + RoleBindings + ServiceAccounts (from our Git repo)
