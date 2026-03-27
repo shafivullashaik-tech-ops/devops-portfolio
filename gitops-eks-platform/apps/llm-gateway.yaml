@@ -1,6 +1,7 @@
 # ArgoCD App-of-Apps entry for LLM Gateway
 # Enterprise pattern: KEDA ScaledObject manages HPA lifecycle
-# ArgoCD ignoreDifferences prevents conflict with KEDA-managed HPA
+# ArgoCD prune=true removes stale resources (HPA not in git → ArgoCD prunes it)
+# KEDA then creates its OWN HPA via ScaledObject
 
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -26,7 +27,7 @@ spec:
 
   syncPolicy:
     automated:
-      prune: true
+      prune: true        # HPA not in git → ArgoCD prunes it → KEDA creates its own
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
@@ -40,16 +41,8 @@ spec:
         maxDuration: 3m
 
   ignoreDifferences:
-    # Ignore replica count changes (KEDA ScaledObject manages replicas)
+    # Ignore replica count — KEDA ScaledObject manages replicas
     - group: apps
       kind: Deployment
       jsonPointers:
         - /spec/replicas
-    # Enterprise pattern: KEDA owns the HPA lifecycle
-    # KEDA creates HPA named 'keda-hpa-<scaledobject-name>' or same name
-    # ArgoCD must NOT prune/recreate HPAs managed by KEDA
-    - group: autoscaling
-      kind: HorizontalPodAutoscaler
-      namespace: llmops
-      jqPathExpressions:
-        - .
