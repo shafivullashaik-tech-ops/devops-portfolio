@@ -7,6 +7,11 @@
 # - Pre-installed plugins
 
 controller:
+  # Jenkins version - must match plugin requirements
+  # json-api and other modern plugins require Jenkins 2.492.1+
+  image:
+    tag: "2.492.1-jdk21"
+
   # Resource allocation
   resources:
     requests:

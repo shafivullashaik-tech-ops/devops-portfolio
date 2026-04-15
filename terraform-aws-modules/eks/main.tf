@@ -78,6 +78,13 @@ resource "aws_eks_cluster" "main" {
     security_group_ids      = [aws_security_group.cluster.id]
   }
 
+  # Enable both auth modes: allows both aws-auth ConfigMap AND Access Entries API
+  # This is required for aws_eks_access_entry resources to work
+  access_config {
+    authentication_mode                         = "API_AND_CONFIG_MAP"
+    bootstrap_cluster_creator_admin_permissions = true
+  }
+
   enabled_cluster_log_types = var.cluster_log_types
 
   dynamic "encryption_config" {
@@ -243,6 +250,20 @@ resource "aws_eks_addon" "kube_proxy" {
   addon_version = var.kube_proxy_addon_version
   resolve_conflicts_on_create = "OVERWRITE"
   resolve_conflicts_on_update = "OVERWRITE"
+
+  tags = var.tags
+}
+
+# EBS CSI Driver addon — required for PVC provisioning on EKS 1.23+
+resource "aws_eks_addon" "ebs_csi_driver" {
+  cluster_name             = aws_eks_cluster.main.name
+  addon_name               = "aws-ebs-csi-driver"
+  addon_version            = var.ebs_csi_driver_addon_version
+  service_account_role_arn = var.ebs_csi_driver_role_arn
+  resolve_conflicts_on_create = "OVERWRITE"
+  resolve_conflicts_on_update = "OVERWRITE"
+
+  depends_on = [aws_eks_node_group.main]
 
   tags = var.tags
 }

@@ -1,0 +1,102 @@
+---
+# =============================================================================
+# KARPENTER — Node-level Autoscaler (Best for EKS — replaces Cluster Autoscaler)
+# =============================================================================
+# Why Karpenter over Cluster Autoscaler (CA)?
+#
+# Cluster Autoscaler (CA):              Karpenter:
+#   - Works with Node Groups             - Provisions ANY EC2 instance type
+#   - Slow (2-5 min to add node)         - Fast (30-60 sec to add node)
+#   - Fixed instance types per group     - Picks cheapest instance that fits
+#   - No Spot awareness                  - Spot + On-demand mix automatically
+#   - No bin-packing optimization        - Optimizes bin-packing (fewer nodes)
+#   - Cannot consolidate underused nodes - Auto-consolidates (saves $$$)
+#
+# Karpenter provisions nodes by directly calling EC2 APIs.
+# No Node Groups needed — it creates nodes on-demand.
+# =============================================================================
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: karpenter
+  namespace: argocd
+  labels:
+    app.kubernetes.io/component: "node-autoscaling"
+    rbac.devops-portfolio.io/managed-by: "gitops"
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"  # Install before everything else
+spec:
+  project: default
+  source:
+    repoURL: https://charts.karpenter.sh
+    chart: karpenter
+    targetRevision: "v0.37.0"
+    helm:
+      values: |
+        # HA: 2 Karpenter controller replicas
+        replicas: 2
+
+        # IRSA — Karpenter needs AWS permissions to provision EC2 instances
+        serviceAccount:
+          annotations:
+            eks.amazonaws.com/role-arn: "arn:aws:iam::ACCOUNT_ID:role/karpenter-irsa-role"
+
+        settings:
+          # Your EKS cluster name
+          clusterName: "devops-portfolio-eks"
+          # EKS cluster endpoint
+          clusterEndpoint: "https://CLUSTER_ENDPOINT.gr7.us-west-2.eks.amazonaws.com"
+          # Karpenter interruption queue (for Spot interruption handling)
+          interruptionQueueName: "karpenter-interruption-queue"
+          # Enable instance consolidation (save money by merging underused nodes)
+          featureGates:
+            spotToSpotConsolidation: true
+
+        # HA: spread Karpenter replicas across AZs
+        affinity:
+          podAntiAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              - labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: karpenter
+                topologyKey: kubernetes.io/hostname
+
+        # Karpenter runs on dedicated "karpenter" node group (not user workloads)
+        tolerations:
+          - key: "karpenter.sh/controller"
+            operator: "Exists"
+            effect: "NoSchedule"
+
+        # Resources for Karpenter controller
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 1
+            memory: 1Gi
+
+        # Pod Disruption Budget for Karpenter itself
+        podDisruptionBudget:
+          minAvailable: 1
+
+        # Prometheus metrics
+        serviceMonitor:
+          enabled: true
+          namespace: monitoring
+
+        logLevel: info
+        logOutputPaths:
+          - stdout
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: karpenter
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

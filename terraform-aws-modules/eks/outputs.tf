@@ -1,5 +1,15 @@
 # EKS Module Outputs
 
+output "cluster_name" {
+  description = "The name of the EKS cluster (alias for cluster_id)"
+  value       = aws_eks_cluster.main.name
+}
+
+output "node_group_role_arn" {
+  description = "IAM role ARN of the EKS node group (used for access_entries)"
+  value       = aws_iam_role.node_group.arn
+}
+
 output "cluster_id" {
   description = "The name of the EKS cluster"
   value       = aws_eks_cluster.main.name

@@ -1,0 +1,134 @@
+---
+# =============================================================================
+# CLUSTER ROLE BINDINGS — Maps AWS IAM Groups/Users → Kubernetes Roles
+# =============================================================================
+# Convention: AWS IAM group names match kubernetes group names below
+#
+# AWS SSO / IAM Groups:
+#   eks-platform-admins   → platform-admin  (cluster-wide)
+#   eks-sre-team          → sre             (cluster-wide)
+#   eks-readonly          → readonly        (cluster-wide)
+#
+# Namespace-specific bindings are in namespace-role-bindings.yaml
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Platform Admin binding — DevOps/Platform team
+# Bound to AWS IAM group: eks-platform-admins
+# -----------------------------------------------------------------------------
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: platform-admins
+  labels:
+    rbac.devops-portfolio.io/managed-by: "gitops"
+  annotations:
+    description: "Binds AWS IAM group eks-platform-admins to platform-admin ClusterRole"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: platform-admin
+subjects:
+  # AWS IAM Group mapped via aws-auth ConfigMap
+  - kind: Group
+    name: eks-platform-admins
+    apiGroup: rbac.authorization.k8s.io
+  # Individual IAM users (add your AWS IAM ARN usernames here)
+  - kind: User
+    name: "shafivullashaik-tech-ops"   # AWS IAM username
+    apiGroup: rbac.authorization.k8s.io
+
+---
+# -----------------------------------------------------------------------------
+# SRE binding — On-call/SRE team (read-all + restart + exec)
+# Bound to AWS IAM group: eks-sre-team
+# -----------------------------------------------------------------------------
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: sre-team
+  labels:
+    rbac.devops-portfolio.io/managed-by: "gitops"
+  annotations:
+    description: "Binds AWS IAM group eks-sre-team to sre ClusterRole"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: sre
+subjects:
+  - kind: Group
+    name: eks-sre-team
+    apiGroup: rbac.authorization.k8s.io
+
+---
+# -----------------------------------------------------------------------------
+# Read-only binding — Auditors, Managers, Compliance
+# Bound to AWS IAM group: eks-readonly
+# -----------------------------------------------------------------------------
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: readonly-users
+  labels:
+    rbac.devops-portfolio.io/managed-by: "gitops"
+  annotations:
+    description: "Binds AWS IAM group eks-readonly to readonly ClusterRole"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: readonly
+subjects:
+  - kind: Group
+    name: eks-readonly
+    apiGroup: rbac.authorization.k8s.io
+
+---
+# -----------------------------------------------------------------------------
+# ArgoCD Server — needs cluster-wide access to manage all app deployments
+# Bound to ServiceAccount: argocd/argocd-server
+# -----------------------------------------------------------------------------
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: argocd-server-admin
+  labels:
+    rbac.devops-portfolio.io/managed-by: "gitops"
+    app.kubernetes.io/component: "argocd"
+  annotations:
+    description: "ArgoCD server needs cluster-wide deploy permissions to manage all applications"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cicd-deployer
+subjects:
+  - kind: ServiceAccount
+    name: argocd-server
+    namespace: argocd
+  - kind: ServiceAccount
+    name: argocd-application-controller
+    namespace: argocd
+
+---
+# -----------------------------------------------------------------------------
+# Prometheus — needs cluster-wide read to scrape metrics from all namespaces
+# -----------------------------------------------------------------------------
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: prometheus-cluster-reader
+  labels:
+    rbac.devops-portfolio.io/managed-by: "gitops"
+    app.kubernetes.io/component: "monitoring"
+  annotations:
+    description: "Prometheus needs cluster-wide read to discover and scrape all ServiceMonitors"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: readonly
+subjects:
+  - kind: ServiceAccount
+    name: kube-prometheus-stack-prometheus
+    namespace: monitoring
+  - kind: ServiceAccount
+    name: prometheus-operator
+    namespace: monitoring

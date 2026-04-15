@@ -24,7 +24,7 @@ spec:
         values: |
           grafana:
             persistence:
-              storageClassName: gp2
+              enabled: false
             adminPassword: "Admin@1234!"
           prometheus:
             prometheusSpec:
@@ -41,7 +41,7 @@ spec:
 
     # Source 2: Values files from Git repo (referenced as $values above)
     - repoURL: https://github.com/shafivullashaik-tech-ops/devops-portfolio.git
-      targetRevision: develop
+      targetRevision: feature/llmops-rag-gateway
       ref: values
 
   destination:
@@ -55,3 +55,12 @@ spec:
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
+      - SkipHooks=true
+  ignoreDifferences:
+    # PVC is immutable after creation — ignore spec diffs
+    - group: ""
+      kind: PersistentVolumeClaim
+      jsonPointers:
+        - /spec/storageClassName
+        - /spec/volumeMode
+        - /spec/resources

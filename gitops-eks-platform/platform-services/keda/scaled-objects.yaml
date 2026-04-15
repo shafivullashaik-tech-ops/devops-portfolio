@@ -1,0 +1,131 @@
+---
+# =============================================================================
+# KEDA ScaledObjects — Event-driven autoscaling for applications
+# =============================================================================
+# NOTE: Only scale workloads that:
+#   1. Exist in the cluster
+#   2. Don't already have a conflicting HPA
+#
+# Jenkins is a StatefulSet managed by Jenkins Helm chart — skip KEDA for it
+# llm-gateway has its own HPA in k8s/deployment.yaml — KEDA extends it here
+# =============================================================================
+
+###############################################################################
+# LLM GATEWAY — Scale on HTTP request rate via Prometheus
+###############################################################################
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: llm-gateway-scaledobject
+  namespace: llmops
+  labels:
+    app: llm-gateway
+  annotations:
+    description: "Scale llm-gateway based on HTTP req/sec from Prometheus"
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: llm-gateway
+
+  minReplicaCount: 2
+  maxReplicaCount: 10
+  cooldownPeriod: 180
+  pollingInterval: 15
+
+  # Tell KEDA to manage the existing HPA (don't create a new one)
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleUp:
+          stabilizationWindowSeconds: 30
+          policies:
+            - type: Pods
+              value: 2
+              periodSeconds: 60
+        scaleDown:
+          stabilizationWindowSeconds: 180
+          policies:
+            - type: Pods
+              value: 1
+              periodSeconds: 60
+
+  triggers:
+    # Scale on HTTP request rate
+    - type: prometheus
+      metadata:
+        serverAddress: http://kube-prometheus-stack-prometheus.monitoring.svc:9090
+        metricName: llm_gateway_http_requests_per_second
+        query: |
+          sum(rate(http_requests_total{namespace="llmops",app="llm-gateway"}[2m]))
+        threshold: "50"
+        activationThreshold: "5"
+
+    # CPU fallback
+    - type: cpu
+      metricType: Utilization
+      metadata:
+        value: "70"
+
+    # Business hours pre-scaling (IST)
+    - type: cron
+      metadata:
+        timezone: "Asia/Calcutta"
+        start: "0 8 * * 1-5"
+        end: "0 20 * * 1-5"
+        desiredReplicas: "3"
+
+---
+###############################################################################
+# DEMO APP — Scale on HTTP request rate
+###############################################################################
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: demo-app-scaledobject
+  namespace: default
+  labels:
+    app: demo-app
+  annotations:
+    description: "Scale demo-app based on HTTP request rate"
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: demo-app
+
+  minReplicaCount: 2
+  maxReplicaCount: 5
+  cooldownPeriod: 120
+  pollingInterval: 15
+
+  triggers:
+    - type: prometheus
+      metadata:
+        serverAddress: http://kube-prometheus-stack-prometheus.monitoring.svc:9090
+        metricName: demo_app_http_rps
+        query: |
+          sum(rate(http_requests_total{namespace="default",app="demo-app"}[2m]))
+        threshold: "30"
+        activationThreshold: "2"
+
+    - type: cpu
+      metricType: Utilization
+      metadata:
+        value: "70"
+
+---
+###############################################################################
+# KEDA TriggerAuthentication — For Prometheus (no extra auth needed for internal)
+###############################################################################
+apiVersion: keda.sh/v1alpha1
+kind: ClusterTriggerAuthentication
+metadata:
+  name: prometheus-trigger-auth
+  namespace: keda
+  annotations:
+    description: "No-op auth for internal cluster Prometheus (no auth needed)"
+spec:
+  # AWS EKS pod identity — uses IRSA/service account for auth
+  podIdentity:
+    provider: aws-eks   # Valid on EKS (was 'none' which is invalid on EKS)

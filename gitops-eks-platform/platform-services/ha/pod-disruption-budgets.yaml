@@ -1,0 +1,184 @@
+---
+# =============================================================================
+# PodDisruptionBudgets (PDB) — Enterprise High Availability
+# =============================================================================
+# PDB = "When Kubernetes drains a node (upgrade, Karpenter consolidation),
+#         guarantee at least N pods remain running"
+#
+# Without PDB: Kubernetes could terminate ALL pods of an app during node drain
+# With PDB:    Kubernetes must keep minAvailable pods ALWAYS running
+#
+# Rule of thumb:
+#   - 2 replicas → minAvailable: 1  (50% always up)
+#   - 3 replicas → minAvailable: 2  (66% always up)
+#   - 5+ replicas → maxUnavailable: 1 (only 1 down at a time)
+# =============================================================================
+
+###############################################################################
+# APPLICATION PDBS
+###############################################################################
+
+# LLM Gateway — critical AI service, always keep at least 2 up
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: llm-gateway-pdb
+  namespace: llmops
+  labels:
+    app: llm-gateway
+    rbac.devops-portfolio.io/managed-by: "gitops"
+  annotations:
+    description: "LLM Gateway: keep min 2 pods during node drain/upgrade"
+spec:
+  minAvailable: 2              # Always keep 2 pods running
+  selector:
+    matchLabels:
+      app: llm-gateway
+
+---
+# Demo App — keep at least 1 up during maintenance
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: demo-app-pdb
+  namespace: default
+  labels:
+    app: demo-app
+    rbac.devops-portfolio.io/managed-by: "gitops"
+  annotations:
+    description: "Demo App: keep min 1 pod during node drain/upgrade"
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: demo-app
+
+---
+###############################################################################
+# PLATFORM TOOL PDBS
+###############################################################################
+
+# ArgoCD Server — GitOps controller must stay available
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: argocd-server-pdb
+  namespace: argocd
+  labels:
+    rbac.devops-portfolio.io/managed-by: "gitops"
+  annotations:
+    description: "ArgoCD server: keep at least 1 running during node disruptions"
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: argocd-server
+
+---
+# ArgoCD Application Controller
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: argocd-application-controller-pdb
+  namespace: argocd
+  labels:
+    rbac.devops-portfolio.io/managed-by: "gitops"
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: argocd-application-controller
+
+---
+# Prometheus — metrics must never go dark
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: prometheus-pdb
+  namespace: monitoring
+  labels:
+    rbac.devops-portfolio.io/managed-by: "gitops"
+  annotations:
+    description: "Prometheus: keep at least 1 running — no gaps in metrics"
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: prometheus
+
+---
+# Grafana — dashboards must stay available
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: grafana-pdb
+  namespace: monitoring
+  labels:
+    rbac.devops-portfolio.io/managed-by: "gitops"
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: grafana
+
+---
+# Loki — log aggregation must stay available
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: loki-pdb
+  namespace: monitoring
+  labels:
+    rbac.devops-portfolio.io/managed-by: "gitops"
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: loki
+
+---
+# KEDA Operator — autoscaling controller
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: keda-operator-pdb
+  namespace: keda
+  labels:
+    rbac.devops-portfolio.io/managed-by: "gitops"
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: keda-operator
+
+---
+# KEDA Metrics Server
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: keda-metrics-apiserver-pdb
+  namespace: keda
+  labels:
+    rbac.devops-portfolio.io/managed-by: "gitops"
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: keda-operator-metrics-apiserver
+
+---
+# Jenkins — CI master must not go down during builds
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: jenkins-pdb
+  namespace: jenkins
+  labels:
+    rbac.devops-portfolio.io/managed-by: "gitops"
+  annotations:
+    description: "Jenkins: never terminate during active builds"
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: jenkins

@@ -15,15 +15,19 @@ spec:
     # Source 1: Jenkins Helm chart
     - repoURL: https://charts.jenkins.io
       chart: jenkins
-      targetRevision: "5.8.7"
+      targetRevision: "5.8.37"
       helm:
         releaseName: jenkins
         valueFiles:
           - $values/aws-platform-infra/jenkins/jenkins-values.yaml
+        values: |
+          controller:
+            image:
+              tag: "2.492.1-jdk21"
 
     # Source 2: Values files from Git repo (referenced as $values above)
     - repoURL: https://github.com/shafivullashaik-tech-ops/devops-portfolio.git
-      targetRevision: develop
+      targetRevision: feature/llmops-rag-gateway
       ref: values
 
   destination:

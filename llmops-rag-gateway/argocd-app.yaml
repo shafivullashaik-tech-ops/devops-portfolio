@@ -1,17 +1,7 @@
 # =============================================================================
 # ArgoCD Application — LLM Gateway
-#
-# Plugs into the EXISTING ArgoCD instance deployed in:
-#   gitops-eks-platform/bootstrap/argocd-install.yaml
-#
-# Apply once:
-#   kubectl apply -f k8s/argocd-app.yaml
-#
-# ArgoCD will then auto-sync k8s/ manifests to the EKS cluster.
-# Image tag is updated by Jenkins (Jenkinsfile Stage 7 — Update GitOps Repo).
-#
-# NOTE: targetRevision is set to feature/llmops-rag-gateway for testing.
-# Change to "main" after PR is merged.
+# Enterprise Pattern: KEDA ScaledObject manages HPA lifecycle
+# ArgoCD ignoreDifferences prevents conflict with KEDA-managed resources
 # =============================================================================
 
 apiVersion: argoproj.io/v1alpha1
@@ -38,8 +28,8 @@ spec:
 
   syncPolicy:
     automated:
-      prune: true          # Remove resources deleted from git
-      selfHeal: true       # Revert manual kubectl changes
+      prune: true
+      selfHeal: true
     syncOptions:
       - CreateNamespace=true
       - PrunePropagationPolicy=foreground
@@ -51,9 +41,16 @@ spec:
         factor: 2
         maxDuration: 3m
 
-  # Health checks
   ignoreDifferences:
+    # Ignore replica count — KEDA ScaledObject manages replicas
     - group: apps
       kind: Deployment
       jsonPointers:
-        - /spec/replicas     # Managed by HPA — ignore drift
+        - /spec/replicas
+    # Enterprise KEDA pattern: KEDA creates and owns the HPA
+    # ArgoCD must NOT delete/recreate HPAs managed by KEDA ScaledObject
+    - group: autoscaling
+      kind: HorizontalPodAutoscaler
+      namespace: llmops
+      jqPathExpressions:
+        - .

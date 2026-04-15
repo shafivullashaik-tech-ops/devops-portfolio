@@ -1,379 +1,348 @@
-# Architecture Overview
+# 🏗️ DevOps Portfolio — Architecture Documentation
 
-## High-Level Architecture
+> **GitHub Repo:** [shafivullashaik-tech-ops/devops-portfolio](https://github.com/shafivullashaik-tech-ops/devops-portfolio)
 
-```
-┌─────────────┐
-│  Developer  │
-└──────┬──────┘
-       │ git push
-       ▼
-┌─────────────────────────────────────────────────┐
-│                   GitHub                         │
-└──────┬──────────────────────────────────────────┘
-       │ webhook
-       ▼
-┌─────────────────────────────────────────────────┐
-│            CI Pipeline (Jenkins)                 │
-│  Build → Test → Scan → Push ECR → Update Git    │
-└──────┬──────────────────────────────────────────┘
-       │
-       ▼
-┌─────────────────────────────────────────────────┐
-│             GitOps Repository                    │
-└──────┬──────────────────────────────────────────┘
-       │ ArgoCD monitors
-       ▼
-┌─────────────────────────────────────────────────┐
-│          CD Pipeline (ArgoCD)                    │
-│  Detect → Sync → Deploy → Rollout               │
-└──────┬──────────────────────────────────────────┘
-       │
-       ▼
-┌─────────────────────────────────────────────────┐
-│              Amazon EKS Cluster                  │
-│  ┌─────────────────────────────────────────┐   │
-│  │ Control Plane (AWS Managed)             │   │
-│  └─────────────────────────────────────────┘   │
-│  ┌─────────────────────────────────────────┐   │
-│  │ Worker Nodes                            │   │
-│  │  • Application Pods                     │   │
-│  │  • ArgoCD                               │   │
-│  │  • Monitoring (Prometheus/Grafana)      │   │
-│  │  • Ingress                              │   │
-│  └─────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────┘
-```
+---
 
-## AWS Network Architecture
+## 📐 Architecture Diagrams
+
+> Open `.drawio` files with [draw.io Desktop](https://www.drawio.com/) or [app.diagrams.net](https://app.diagrams.net/)
+
+| Diagram | File | Description |
+|---------|------|-------------|
+| **Infrastructure** | [`docs/diagrams/infrastructure-architecture.drawio`](docs/diagrams/infrastructure-architecture.drawio) | AWS VPC, EKS, subnets, ECR, IAM, traffic flow |
+| **CI/CD Pipeline** | [`docs/diagrams/cicd-pipeline.drawio`](docs/diagrams/cicd-pipeline.drawio) | Jenkins → ECR → ArgoCD → EKS + LLM RAG flow |
+
+---
+
+## 🌐 Layer 1 — AWS Infrastructure (Terraform)
+
+### Infrastructure Overview
 
 ```
-┌───────────────────────────────────────────────────────────────┐
-│                        AWS VPC (10.0.0.0/16)                   │
-│                                                                │
-│  ┌─────────────────────────────────────────────────────────┐ │
-│  │            Public Subnets (10.0.1.0/24, 10.0.2.0/24)    │ │
-│  │                                                          │ │
-│  │  ┌──────────────┐    ┌──────────────┐                  │ │
-│  │  │ NAT Gateway  │    │ Load Balancer│                  │ │
-│  │  │   (AZ-a)     │    │              │                  │ │
-│  │  └──────────────┘    └──────────────┘                  │ │
-│  │                                                          │ │
-│  └─────────────────────────────────────────────────────────┘ │
-│                                                                │
-│  ┌─────────────────────────────────────────────────────────┐ │
-│  │          Private Subnets (10.0.10.0/24, 10.0.11.0/24)   │ │
-│  │                                                          │ │
-│  │  ┌──────────────┐    ┌──────────────┐                  │ │
-│  │  │  EKS Nodes   │    │  EKS Nodes   │                  │ │
-│  │  │   (AZ-a)     │    │   (AZ-b)     │                  │ │
-│  │  └──────────────┘    └──────────────┘                  │ │
-│  │                                                          │ │
-│  └─────────────────────────────────────────────────────────┘ │
-│                                                                │
-└───────────────────────────────────────────────────────────────┘
+AWS Cloud (us-west-2)
+├── VPC (10.0.0.0/16)
+│   ├── Availability Zone A (us-west-2a)
+│   │   ├── Public Subnet  10.0.1.0/24  ← ALB (Load Balancer)
+│   │   └── Private Subnet 10.0.3.0/24  ← EKS Worker Nodes
+│   ├── Availability Zone B (us-west-2b)
+│   │   ├── Public Subnet  10.0.2.0/24  ← ALB (Load Balancer)
+│   │   └── Private Subnet 10.0.4.0/24  ← EKS Worker Nodes
+│   ├── Internet Gateway   ← Public internet access
+│   └── NAT Gateway        ← Private nodes outbound access
+├── EKS Cluster
+│   ├── Control Plane (AWS Managed)
+│   ├── Node Group — t3.medium × 2  (platform services)
+│   └── Node Group — t3.large  × 2  (application workloads)
+├── ECR Repositories
+│   ├── demo-app
+│   └── llm-gateway
+├── IAM Roles
+│   ├── EKS Node Role       ← EC2 nodes call AWS APIs
+│   ├── Jenkins Role        ← Push images to ECR
+│   └── LLM Gateway IRSA    ← Pod-level AWS permissions
+├── ACM (SSL/TLS Certificates)
+├── Route 53 (DNS)
+└── S3 + DynamoDB           ← Terraform remote state + lock
 ```
 
-
-## External Traffic Flow
-
-Complete request path from internet to application:
+### Terraform Module Structure
 
 ```
-┌─────────────┐
-│   Internet  │
-│    User     │
-└──────┬──────┘
-       │ HTTPS request (demo.example.com)
-       ▼
-┌──────────────────────────────────────┐
-│         Route 53 (DNS)               │
-│  • Resolves domain to ALB            │
-│  • Health checks                     │
-│  • Failover policies                 │
-└──────┬───────────────────────────────┘
-       │ Routed to ALB DNS
-       ▼
-┌──────────────────────────────────────┐
-│  Application Load Balancer (ALB)     │
-│  • SSL/TLS termination (ACM cert)    │
-│  • WAF protection                    │
-│  • L7 routing                        │
-│  • Health checks to targets          │
-└──────┬───────────────────────────────┘
-       │ HTTP to targets
-       ▼
-┌──────────────────────────────────────┐
-│  AWS Load Balancer Controller        │
-│  • Manages ALB via Ingress           │
-│  • Target registration               │
-│  • Health monitoring                 │
-└──────┬───────────────────────────────┘
-       │ Routes to service
-       ▼
-┌──────────────────────────────────────┐
-│  Kubernetes Ingress Resource         │
-│  • Path-based routing                │
-│  • Host-based routing                │
-│  • Backend service mapping           │
-└──────┬───────────────────────────────┘
-       │ To ClusterIP service
-       ▼
-┌──────────────────────────────────────┐
-│  Kubernetes Service (ClusterIP)      │
-│  • Load balancing across pods        │
-│  • Service discovery                 │
-│  • Internal DNS (demo-app.default)   │
-└──────┬───────────────────────────────┘
-       │ To pod endpoint
-       ▼
-┌──────────────────────────────────────┐
-│  Application Pod                     │
-│  • demo-app container                │
-│  • Health checks (/health, /ready)   │
-│  • Metrics endpoint (/metrics)       │
-└──────────────────────────────────────┘
+terraform-aws-modules/
+├── vpc/          ← VPC, subnets, IGW, NAT, route tables
+├── eks/          ← EKS cluster, node groups, addons
+├── ecr/          ← Docker image repositories + lifecycle
+├── iam/          ← IAM roles, policies, IRSA
+├── acm/          ← SSL/TLS certificate provisioning
+├── route53/      ← DNS records and hosted zones
+└── jenkins/      ← Jenkins infrastructure resources
+
+aws-platform-infra/terraform/
+├── environments/dev/   ← Dev environment (uses modules above)
+└── environments/prod/  ← Prod environment (uses modules above)
 ```
 
-### Layer Responsibilities
-
-| Layer | Purpose | Technology |
-|-------|---------|------------|
-| DNS | Domain resolution, health checks, failover | Route 53 |
-| Load Balancer | SSL termination, WAF, L7 routing | ALB |
-| Controller | ALB lifecycle, target management | AWS LB Controller |
-| Ingress | Path/host routing, annotations | Kubernetes Ingress |
-| Service | Pod load balancing, discovery | Kubernetes Service |
-| Pod | Application logic | Container (Node.js) |
-
-### Traffic Flow Examples
-
-**Example 1: HTTPS Request**
+### Traffic Flow (numbered steps)
 ```
-https://demo.example.com/api/items
-  → Route 53 resolves to ALB
-  → ALB terminates SSL with ACM certificate
-  → ALB forwards HTTP to target (pod IP)
-  → Ingress routes /api/* to demo-app service
-  → Service load balances to pod
-  → Pod handles request
+1. User → Internet Gateway (public internet)
+2. IGW  → Application Load Balancer (public subnet)
+3. ALB  → EKS Worker Nodes (private subnet, port forward)
+4. Nodes → NAT Gateway (outbound: pull images, call APIs)
+5. EKS Control Plane → Manages all worker nodes
+6. GitHub Webhook → Triggers Jenkins (CI)
+7. Jenkins → Builds image, pushes to ECR
+8. ArgoCD → Pulls image from ECR, deploys to pods
 ```
 
-**Example 2: Health Check**
-```
-ALB health check every 15s
-  → HTTP GET /health to pod IP
-  → Pod responds 200 OK
-  → ALB marks target healthy
-  → Route 53 health check to ALB DNS
-  → Route 53 marks endpoint healthy
-```
+---
 
-## CI/CD Flow
+## ☸️ Layer 2 — Kubernetes (EKS)
 
-### Continuous Integration (Jenkins)
-1. Webhook triggers Jenkins on Git push
-2. Checkout source code
-3. Build Docker image (multi-stage)
-4. Run unit and integration tests
-5. Security scanning (Trivy, npm audit)
-6. Push image to ECR
-7. Update GitOps repository with new image tag
+### Namespaces & Workloads
 
-### Continuous Deployment (ArgoCD)
-1. ArgoCD detects change in GitOps repository
-2. Compares desired state (Git) vs actual state (cluster)
-3. Syncs differences to cluster
-4. Deploys using configured strategy (rolling/canary)
-5. Monitors health and automatically rolls back on failure
+| Namespace | Workload | Purpose |
+|-----------|---------|---------|
+| `argocd` | ArgoCD | GitOps continuous deployment controller |
+| `jenkins` | Jenkins | CI/CD pipelines |
+| `monitoring` | Prometheus | Metrics collection & alerting |
+| `monitoring` | Grafana | Unified observability dashboards |
+| `monitoring` | Loki | Log aggregation |
+| `monitoring` | Tempo | Distributed tracing |
+| `llmops` | llm-gateway | LLM/RAG API service (Python/FastAPI) |
+| `default` | demo-app | Node.js microservice demo |
 
-## Security Architecture
-
-### IAM Roles for Service Accounts (IRSA)
-```
-EKS Pod → Service Account → IAM Role → AWS Service
-         (annotated)        (via OIDC)  (S3, ECR, etc.)
-```
-
-**Benefits:**
-- No hardcoded credentials
-- Temporary credentials via STS
-- Fine-grained permissions per pod
-- Audit trail via CloudTrail
-
-### Network Security
-- Private subnets for worker nodes
-- Security groups restrict traffic
-- Network policies in Kubernetes
-- TLS for inter-service communication
-
-## Observability Stack
-
-### Metrics (Prometheus)
-- Application metrics (/metrics endpoint)
-- Infrastructure metrics (node, pod, container)
-- Custom business metrics
-- SLO tracking
-
-### Logs (CloudWatch)
-- Structured JSON logs
-- FluentBit for log collection
-- Centralized log aggregation
-- Query and analysis
-
-### Dashboards (Grafana)
-- Request rate, error rate, duration (RED)
-- Infrastructure health
-- Application performance
-- Business KPIs
-
-## GitOps Pattern
-
-### Principles
-- Git as single source of truth
-- Declarative configuration
-- Automatic synchronization
-- Pull-based deployment
-
-### Environment Structure
-```
-gitops-eks-platform/
-├── apps/
-│   └── app-of-apps.yaml          # Manages all applications
-├── environments/
-│   ├── dev/
-│   │   └── values.yaml           # Dev configuration
-│   └── prod/
-│       └── values.yaml           # Prod configuration
-└── bootstrap/
-    └── argocd-install.yaml       # ArgoCD installation
-```
-
-## Infrastructure as Code
-
-### Terraform Module Pattern
-```
-terraform-aws-modules/            # Reusable modules
-├── vpc/
-├── eks/
-└── ecr/
-
-aws-platform-infra/               # Module consumers
-└── terraform/
-    └── environments/
-        ├── dev/
-        └── prod/
-```
-
-### State Management
-- Remote backend (S3 + DynamoDB)
-- State locking prevents concurrent modifications
-- Versioned state files
-- Encrypted at rest
-
-## Scaling Strategy
-
-### Horizontal Pod Autoscaling
-- CPU-based scaling
-- Memory-based scaling
-- Custom metrics scaling
-
-### Cluster Autoscaling
-- Node group auto-scaling
-- Scale down idle nodes
-- Right-size based on workload
-
-## Disaster Recovery
-
-### Recovery Time Objective (RTO)
-- Infrastructure rebuild: ~30 minutes (via Terraform)
-- Application deployment: ~5 minutes (via ArgoCD)
-- Total RTO: ~35 minutes
-
-### Recovery Point Objective (RPO)
-- Git provides point-in-time recovery
-- ECR images are immutable and versioned
-- Terraform state is versioned in S3
-
-## DNS and SSL/TLS Setup
-
-### Route 53 Configuration
-
-**Hosted Zone:**
-- Domain: `example.com`
-- Name servers delegated from domain registrar
-- Records managed via Terraform
-
-**A Record (Alias):**
-```
-demo.example.com → ALB DNS name
-  Type: A (Alias)
-  Target: dualstack.k8s-default-demoapp-xxxx.us-east-1.elb.amazonaws.com
-  Evaluate target health: Yes
-```
-
-**Health Checks:**
-- Protocol: HTTPS
-- Path: /health
-- Interval: 30 seconds
-- Failure threshold: 3
-- CloudWatch alarm on failure
-
-### SSL/TLS Certificates (ACM)
-
-**Certificate Request:**
-```
-Primary domain: demo.example.com
-SANs: *.demo.example.com, api.demo.example.com
-Validation: DNS (automatic via Route 53)
-Auto-renewal: Yes (before expiration)
-```
-
-**DNS Validation Records:**
-ACM creates CNAME records in Route 53:
-```
-_xxxxx.demo.example.com → _xxxxx.acm-validations.aws
-```
-
-**Certificate Attachment:**
-- Attached to ALB listener (port 443)
-- Managed by AWS Load Balancer Controller via Ingress annotation
-- No certificate handling in application pod
-
-### Multi-Region Setup (Optional)
-
-For high availability across regions:
+### App-of-Apps (ArgoCD)
 
 ```
-┌─────────────┐
-│  Route 53   │
-│             │
-│  Failover   │
-│  Policy     │
-└──┬───────┬──┘
-   │       │
-   │       └──────────────┐
-   │                      │
-   ▼                      ▼
-┌──────────┐         ┌──────────┐
-│ us-east-1│         │ eu-west-1│
-│   ALB    │         │   ALB    │
-└────┬─────┘         └────┬─────┘
-     │                    │
-     ▼                    ▼
-   EKS Cluster       EKS Cluster
+app-of-apps (parent)
+├── jenkins
+├── kube-prometheus-stack
+├── loki-stack
+├── tempo
+├── demo-app
+└── llm-gateway
 ```
 
-### Domain Setup Requirements
+---
 
-For complete setup, you need:
+## 🔄 Layer 3 — CI/CD Pipeline
 
-1. **Domain Name** (~$12/year from Route 53 or other registrar)
-2. **Hosted Zone in Route 53** (~$0.50/month)
-3. **ACM Certificate** (Free)
-4. **ALB** (Created automatically by Ingress, ~$16/month)
+### Complete Flow
 
-**Note:** For portfolio/demo purposes without a real domain:
-- Use ALB DNS directly (ugly but works)
-- Use self-signed certificate
-- Document "would use Route 53 + ACM in production"
+```
+Developer pushes code
+        ↓
+GitHub (PR → merge to main)
+        ↓ webhook
+Jenkins CI Pipeline
+  ├── 1. Checkout code
+  ├── 2. Run tests (npm test / pytest)
+  ├── 3. Docker build (multi-stage)
+  ├── 4. Security scan (Trivy)
+  ├── 5. Push image → ECR (tagged with build#)
+  └── 6. Update image tag in GitOps repo
+        ↓ git push
+ArgoCD detects change
+  ├── Compare desired (Git) vs actual (K8s)
+  ├── Apply Helm chart (kubectl apply)
+  ├── Rolling update (zero downtime)
+  └── Health check (readiness/liveness probes)
+        ↓
+Application live in EKS ✅
+        ↓
+Prometheus/Loki/Tempo collect telemetry
+        ↓
+Grafana shows metrics + logs + traces
+```
+
+---
+
+## 🤖 Layer 4 — LLM Gateway (AI Application)
+
+### What is LLM + RAG?
+
+**LLM (Large Language Model):** An AI that understands and generates text (GPT-4, Claude, Llama, etc.)
+
+**RAG (Retrieval-Augmented Generation):**
+```
+Without RAG:
+  User: "What is our leave policy?"
+  LLM:  "I don't know your company policy" ❌
+
+With RAG:
+  1. Search company documents for "leave policy"
+  2. Find: "Employees get 20 days annual leave..."
+  3. Send document context + question to LLM
+  LLM:  "Based on your policy, you get 20 days" ✅
+```
+
+### LLM Gateway Request Flow
+
+```
+User Request (POST /chat)
+        ↓
+JWT Auth Middleware     ← Verify bearer token
+        ↓
+Rate Limiter            ← 10 requests/minute per user
+        ↓
+Guardrails              ← Block harmful/malicious prompts
+        ↓
+RAG Retriever           ← Embed query → search FAISS → top-3 docs
+        ↓
+Cache Check (Redis)     ← Return cached response if exists
+        ↓
+LLM API Call            ← OpenAI/Ollama + context + question
+        ↓
+Response + Cache Store  ← Store for future identical queries
+        ↓
+Observability           ← Prometheus metrics, Loki log, Tempo trace
+        ↓
+Response to User        ← {"answer": "...", "sources": [...]}
+```
+
+### LLM Gateway Code Structure
+
+```
+llmops-rag-gateway/app/
+├── main.py                 ← FastAPI application entry point
+├── routers/
+│   ├── chat.py             ← POST /chat — conversational AI
+│   ├── rag.py              ← POST /rag/ingest — upload documents
+│   └── health.py           ← GET  /health — liveness check
+├── middleware/
+│   ├── auth.py             ← JWT token validation
+│   ├── rate_limiter.py     ← Per-user rate limiting
+│   └── guardrails.py       ← Prompt safety filtering
+├── rag/
+│   ├── ingestion.py        ← Load PDFs/text files
+│   ├── chunking.py         ← Split into 500-word overlapping chunks
+│   ├── store.py            ← FAISS vector database
+│   └── retriever.py        ← Semantic similarity search
+├── llm/
+│   ├── client.py           ← OpenAI/Ollama API client
+│   └── cache.py            ← Redis response cache
+└── observability/
+    ├── metrics.py          ← Prometheus counters/histograms
+    └── logger.py           ← Structured JSON logging
+```
+
+---
+
+## 📊 Layer 5 — Observability (SRE)
+
+### The Three Pillars
+
+| Pillar | Tool | What it answers |
+|--------|------|-----------------|
+| **Metrics** | Prometheus → Grafana | "How many requests/sec? CPU usage? Error rate?" |
+| **Logs** | Loki → Grafana | "What happened at 10:00 PM? Show ERROR logs" |
+| **Traces** | Tempo → Grafana | "Why did this request take 3 seconds? Which service?" |
+
+### SRE Practices
+
+```
+sre-observability-stack/
+├── load-tests/
+│   ├── high-error-rate.js  ← k6: simulate 500 errors
+│   └── high-latency.js     ← k6: simulate slow responses
+├── runbooks/
+│   ├── crashloop.md        ← Steps when pod is crash-looping
+│   ├── high-error-rate.md  ← Steps when error rate spikes
+│   └── high-latency.md     ← Steps when latency is high
+└── docs/
+    ├── gameday.md          ← Planned chaos engineering
+    └── postmortems/001.md  ← Post-incident review
+```
+
+---
+
+## 🏆 Best Practices Summary
+
+### Infrastructure
+| Practice | Implementation |
+|----------|---------------|
+| Infrastructure as Code | All AWS resources managed by Terraform |
+| Module reuse | Reusable modules for VPC/EKS/ECR/IAM |
+| Remote state | S3 backend + DynamoDB state locking |
+| Multi-AZ | Resources span 2 Availability Zones |
+| Private workloads | EKS nodes in private subnets |
+| Least privilege | Separate IAM role per service (IRSA) |
+
+### Application
+| Practice | Implementation |
+|----------|---------------|
+| Containerization | Docker multi-stage builds |
+| Helm charts | Templated K8s manifests for all apps |
+| Health checks | Readiness + Liveness probes on all pods |
+| Auto-scaling | HPA based on CPU/memory metrics |
+| Resource limits | CPU/Memory requests+limits on all pods |
+
+### Security
+| Practice | Implementation |
+|----------|---------------|
+| Authentication | JWT bearer tokens for API access |
+| Rate limiting | Per-user request throttling |
+| AI Guardrails | Prompt injection and harm detection |
+| IRSA | Pod-level AWS permissions, not node-level |
+| Secrets | Kubernetes Secrets, not hardcoded |
+
+### Reliability
+| Practice | Implementation |
+|----------|---------------|
+| GitOps | ArgoCD as source-of-truth enforcer |
+| Rollback | `git revert` instantly reverts deployments |
+| Drift detection | ArgoCD auto-corrects manual changes |
+| Runbooks | Documented response for every alert type |
+| GameDays | Planned chaos testing exercises |
+| Postmortems | Blameless incident review process |
+
+---
+
+## 📁 Repository Structure
+
+```
+devops-portfolio/
+├── 📄 README.md                    ← Project overview
+├── 📄 ARCHITECTURE.md              ← This file
+├── 📄 DEPLOYMENT.md                ← Step-by-step deployment guide
+│
+├── 🗂️ docs/diagrams/
+│   ├── infrastructure-architecture.drawio  ← AWS infra diagram
+│   └── cicd-pipeline.drawio                ← CI/CD flow diagram
+│
+├── 🏗️ terraform-aws-modules/       ← Reusable Terraform modules
+│   ├── vpc/                        ← Network infrastructure
+│   ├── eks/                        ← Kubernetes cluster
+│   ├── ecr/                        ← Container registry
+│   ├── iam/                        ← Identity & access
+│   ├── acm/                        ← SSL certificates
+│   └── route53/                    ← DNS management
+│
+├── ☁️ aws-platform-infra/          ← Environment-specific Terraform
+│   ├── terraform/environments/dev/
+│   ├── terraform/environments/prod/
+│   └── Jenkinsfile                 ← Infra CI/CD pipeline
+│
+├── ☸️ gitops-eks-platform/         ← ArgoCD GitOps configuration
+│   ├── bootstrap/                  ← ArgoCD installation
+│   ├── apps/                       ← App-of-Apps definitions
+│   ├── platform-services/          ← Platform tooling (monitoring, etc.)
+│   └── environments/               ← Dev/Prod values
+│
+├── 🤖 llmops-rag-gateway/          ← LLM + RAG API service
+│   ├── app/                        ← FastAPI Python application
+│   ├── helm/                       ← Kubernetes Helm chart
+│   ├── k8s/                        ← Raw manifests + monitoring
+│   └── tests/                      ← Unit + integration tests
+│
+├── 🟢 app-microservice-demo/       ← Node.js microservice demo
+│   ├── src/                        ← Express.js application
+│   ├── helm/                       ← Kubernetes Helm chart
+│   └── tests/                      ← Unit + integration tests
+│
+└── 📊 sre-observability-stack/     ← SRE tooling & practices
+    ├── monitoring/                 ← Prometheus + Grafana config
+    ├── load-tests/                 ← k6 performance tests
+    └── runbooks/                   ← Incident response playbooks
+```
+
+---
+
+## 🚀 Quick Start
+
+See [DEPLOYMENT.md](DEPLOYMENT.md) for full step-by-step deployment instructions.
+
+```bash
+# 1. Bootstrap AWS infrastructure
+cd aws-platform-infra/terraform/environments/dev
+terraform init && terraform apply
+
+# 2. Install ArgoCD
+kubectl apply -k gitops-eks-platform/bootstrap/
+
+# 3. Deploy all apps via GitOps
+kubectl apply -f gitops-eks-platform/apps/app-of-apps.yaml
+
+# 4. All services deploy automatically via ArgoCD 🎉
+```

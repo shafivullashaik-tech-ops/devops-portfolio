@@ -1,0 +1,394 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxGraphModel dx="1422" dy="762" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1654" pageHeight="1169" math="0" shadow="1">
+  <root>
+    <mxCell id="0" />
+    <mxCell id="1" parent="0" />
+
+    <!-- Title -->
+    <mxCell id="title" value="DevOps Portfolio — CI/CD Pipeline &amp; GitOps Flow" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=20;fontStyle=1;fontColor=#232F3E;" vertex="1" parent="1">
+      <mxGeometry x="200" y="20" width="1200" height="40" as="geometry" />
+    </mxCell>
+
+    <!-- ===== PHASE LABELS (Swimlane style) ===== -->
+
+    <!-- Phase 1: Developer -->
+    <mxCell id="phase1-bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F4FD;strokeColor=#147EBA;strokeWidth=2;" vertex="1" parent="1">
+      <mxGeometry x="30" y="70" width="160" height="1000" as="geometry" />
+    </mxCell>
+    <mxCell id="phase1-label" value="👨‍💻 DEVELOPER" style="text;html=1;align=center;fontSize=12;fontStyle=1;fontColor=#147EBA;rotation=-90;" vertex="1" parent="1">
+      <mxGeometry x="48" y="580" width="120" height="30" as="geometry" />
+    </mxCell>
+
+    <!-- Phase 2: Source Control -->
+    <mxCell id="phase2-bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F3E8FF;strokeColor=#8C4FFF;strokeWidth=2;" vertex="1" parent="1">
+      <mxGeometry x="210" y="70" width="160" height="1000" as="geometry" />
+    </mxCell>
+    <mxCell id="phase2-label" value="📦 SOURCE CONTROL" style="text;html=1;align=center;fontSize=12;fontStyle=1;fontColor=#8C4FFF;rotation=-90;" vertex="1" parent="1">
+      <mxGeometry x="228" y="590" width="120" height="30" as="geometry" />
+    </mxCell>
+
+    <!-- Phase 3: CI (Jenkins) -->
+    <mxCell id="phase3-bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF8E1;strokeColor=#F5A30F;strokeWidth=2;" vertex="1" parent="1">
+      <mxGeometry x="390" y="70" width="300" height="1000" as="geometry" />
+    </mxCell>
+    <mxCell id="phase3-label" value="🔨 CI — JENKINS (Build &amp; Test)" style="text;html=1;align=center;fontSize=12;fontStyle=1;fontColor=#F5A30F;rotation=-90;" vertex="1" parent="1">
+      <mxGeometry x="410" y="620" width="250" height="30" as="geometry" />
+    </mxCell>
+
+    <!-- Phase 4: Registry -->
+    <mxCell id="phase4-bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFECEC;strokeColor=#C7131F;strokeWidth=2;" vertex="1" parent="1">
+      <mxGeometry x="710" y="70" width="160" height="1000" as="geometry" />
+    </mxCell>
+    <mxCell id="phase4-label" value="🐳 REGISTRY (ECR)" style="text;html=1;align=center;fontSize=12;fontStyle=1;fontColor=#C7131F;rotation=-90;" vertex="1" parent="1">
+      <mxGeometry x="728" y="590" width="120" height="30" as="geometry" />
+    </mxCell>
+
+    <!-- Phase 5: CD (ArgoCD) -->
+    <mxCell id="phase5-bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8FFE8;strokeColor=#1A9C3E;strokeWidth=2;" vertex="1" parent="1">
+      <mxGeometry x="890" y="70" width="300" height="1000" as="geometry" />
+    </mxCell>
+    <mxCell id="phase5-label" value="🚀 CD — ArgoCD (GitOps Deploy)" style="text;html=1;align=center;fontSize=12;fontStyle=1;fontColor=#1A9C3E;rotation=-90;" vertex="1" parent="1">
+      <mxGeometry x="910" y="620" width="250" height="30" as="geometry" />
+    </mxCell>
+
+    <!-- Phase 6: Production -->
+    <mxCell id="phase6-bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF0E8;strokeColor=#ED7100;strokeWidth=2;" vertex="1" parent="1">
+      <mxGeometry x="1210" y="70" width="160" height="1000" as="geometry" />
+    </mxCell>
+    <mxCell id="phase6-label" value="⚙️ PRODUCTION (EKS)" style="text;html=1;align=center;fontSize=12;fontStyle=1;fontColor=#ED7100;rotation=-90;" vertex="1" parent="1">
+      <mxGeometry x="1228" y="590" width="120" height="30" as="geometry" />
+    </mxCell>
+
+    <!-- Phase 7: Observability -->
+    <mxCell id="phase7-bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E8;strokeColor=#7AA116;strokeWidth=2;" vertex="1" parent="1">
+      <mxGeometry x="1390" y="70" width="200" height="1000" as="geometry" />
+    </mxCell>
+    <mxCell id="phase7-label" value="📊 OBSERVABILITY" style="text;html=1;align=center;fontSize=12;fontStyle=1;fontColor=#7AA116;rotation=-90;" vertex="1" parent="1">
+      <mxGeometry x="1410" y="590" width="150" height="30" as="geometry" />
+    </mxCell>
+
+    <!-- ===== STEP 1: Developer writes code ===== -->
+    <mxCell id="step1-box" value="1️⃣ Write Code&#xa;────────────&#xa;• Feature branch&#xa;• git commit&#xa;• git push origin&#xa;  feature/my-feature" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#147EBA;strokeColor=#0A5A8A;fontColor=#FFFFFF;fontSize=10;fontStyle=0;align=left;verticalAlign=top;" vertex="1" parent="1">
+      <mxGeometry x="45" y="120" width="130" height="100" as="geometry" />
+    </mxCell>
+
+    <!-- ===== STEP 2: GitHub ===== -->
+    <mxCell id="step2-box" value="2️⃣ GitHub&#xa;────────────&#xa;• Push to feature branch&#xa;• Pull Request raised&#xa;• Code Review&#xa;• Merge to main" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#8C4FFF;strokeColor=#6A2FDD;fontColor=#FFFFFF;fontSize=10;fontStyle=0;align=left;verticalAlign=top;" vertex="1" parent="1">
+      <mxGeometry x="225" y="120" width="130" height="100" as="geometry" />
+    </mxCell>
+
+    <!-- GitHub webhook trigger -->
+    <mxCell id="step2b-box" value="🔔 Webhook&#xa;────────────&#xa;GitHub notifies&#xa;Jenkins on push&#xa;to main branch" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#8C4FFF;strokeColor=#6A2FDD;fontColor=#FFFFFF;fontSize=10;fontStyle=0;align=left;verticalAlign=top;" vertex="1" parent="1">
+      <mxGeometry x="225" y="260" width="130" height="90" as="geometry" />
+    </mxCell>
+
+    <!-- ===== STEP 3: Jenkins Checkout ===== -->
+    <mxCell id="step3-box" value="3️⃣ Checkout&#xa;────────────&#xa;Jenkins pulls&#xa;source code from&#xa;GitHub repo" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5A30F;strokeColor=#C78000;fontColor=#FFFFFF;fontSize=10;fontStyle=0;align=left;verticalAlign=top;" vertex="1" parent="1">
+      <mxGeometry x="405" y="120" width="130" height="90" as="geometry" />
+    </mxCell>
+
+    <!-- ===== STEP 4: Jenkins Test ===== -->
+    <mxCell id="step4-box" value="4️⃣ Run Tests&#xa;────────────&#xa;• npm test (Node.js)&#xa;• pytest (Python)&#xa;• Unit tests&#xa;• Integration tests&#xa;• Code coverage" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5A30F;strokeColor=#C78000;fontColor=#FFFFFF;fontSize=10;fontStyle=0;align=left;verticalAlign=top;" vertex="1" parent="1">
+      <mxGeometry x="555" y="120" width="130" height="110" as="geometry" />
+    </mxCell>
+
+    <!-- Test result gate -->
+    <mxCell id="gate-test" value="Tests&#xa;Pass?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#F5A30F;strokeColor=#C78000;fontColor=#FFFFFF;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+      <mxGeometry x="470" y="270" width="100" height="70" as="geometry" />
+    </mxCell>
+    <mxCell id="gate-test-fail" value="❌ FAIL&#xa;→ Notify Dev" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FF5555;strokeColor=#CC0000;fontColor=#FFFFFF;fontSize=9;" vertex="1" parent="1">
+      <mxGeometry x="400" y="385" width="100" height="50" as="geometry" />
+    </mxCell>
+    <mxCell id="gate-fail-edge" value="No" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#FF5555;strokeWidth=2;fontStyle=1;fontSize=9;fontColor=#FF5555;" edge="1" source="gate-test" target="gate-test-fail" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+
+    <!-- ===== STEP 5: Docker Build ===== -->
+    <mxCell id="step5-box" value="5️⃣ Docker Build&#xa;────────────&#xa;• docker build -t&#xa;  app:${BUILD_NUM}&#xa;• Multi-stage build&#xa;• Optimized image" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5A30F;strokeColor=#C78000;fontColor=#FFFFFF;fontSize=10;fontStyle=0;align=left;verticalAlign=top;" vertex="1" parent="1">
+      <mxGeometry x="405" y="390" width="130" height="110" as="geometry" />
+    </mxCell>
+
+    <!-- ===== STEP 6: Security Scan ===== -->
+    <mxCell id="step6-box" value="6️⃣ Security Scan&#xa;────────────&#xa;• Trivy scan image&#xa;• Check CVEs&#xa;• OWASP check&#xa;• Fail if CRITICAL" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5A30F;strokeColor=#C78000;fontColor=#FFFFFF;fontSize=10;fontStyle=0;align=left;verticalAlign=top;" vertex="1" parent="1">
+      <mxGeometry x="555" y="390" width="130" height="110" as="geometry" />
+    </mxCell>
+
+    <!-- ===== STEP 7: Push to ECR ===== -->
+    <mxCell id="step7-box" value="7️⃣ Push to ECR&#xa;────────────&#xa;• aws ecr login&#xa;• docker tag&#xa;  app:latest&#xa;• docker push&#xa;  ECR/app:v1.2.3" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C7131F;strokeColor=#8C0F15;fontColor=#FFFFFF;fontSize=10;fontStyle=0;align=left;verticalAlign=top;" vertex="1" parent="1">
+      <mxGeometry x="725" y="120" width="130" height="120" as="geometry" />
+    </mxCell>
+
+    <!-- ECR repos -->
+    <mxCell id="ecr-repos" value="📦 ECR Repos&#xa;────────────&#xa;• demo-app:v1.2.3&#xa;• llm-gateway:v2.0.1&#xa;• Lifecycle Policy&#xa;  (keep last 10)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C7131F;strokeColor=#8C0F15;fontColor=#FFFFFF;fontSize=10;fontStyle=0;align=left;verticalAlign=top;" vertex="1" parent="1">
+      <mxGeometry x="725" y="290" width="130" height="110" as="geometry" />
+    </mxCell>
+
+    <!-- ===== STEP 8: Update Git ===== -->
+    <mxCell id="step8-box" value="8️⃣ Update GitOps Repo&#xa;────────────&#xa;• Jenkins updates&#xa;  helm/values.yaml&#xa;  image.tag: v1.2.3&#xa;• git commit &amp; push" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5A30F;strokeColor=#C78000;fontColor=#FFFFFF;fontSize=10;fontStyle=0;align=left;verticalAlign=top;" vertex="1" parent="1">
+      <mxGeometry x="555" y="550" width="130" height="110" as="geometry" />
+    </mxCell>
+
+    <!-- ===== STEP 9: ArgoCD Detect ===== -->
+    <mxCell id="step9-box" value="9️⃣ ArgoCD Detects&#xa;────────────&#xa;• Polls GitHub every&#xa;  3 minutes&#xa;• Detects new image&#xa;  tag in values.yaml&#xa;• Compares desired&#xa;  vs actual state" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1A9C3E;strokeColor=#0E6B2A;fontColor=#FFFFFF;fontSize=10;fontStyle=0;align=left;verticalAlign=top;" vertex="1" parent="1">
+      <mxGeometry x="905" y="120" width="130" height="140" as="geometry" />
+    </mxCell>
+
+    <!-- Sync gate -->
+    <mxCell id="gate-sync" value="Drift&#xa;Detected?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#1A9C3E;strokeColor=#0E6B2A;fontColor=#FFFFFF;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+      <mxGeometry x="920" y="300" width="100" height="70" as="geometry" />
+    </mxCell>
+    <mxCell id="gate-sync-no" value="✅ In Sync&#xa;No action" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;" vertex="1" parent="1">
+      <mxGeometry x="850" y="420" width="90" height="40" as="geometry" />
+    </mxCell>
+    <mxCell id="gate-sync-no-edge" value="No" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#1A9C3E;strokeWidth=2;fontStyle=1;fontSize=9;fontColor=#1A9C3E;" edge="1" source="gate-sync" target="gate-sync-no" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+
+    <!-- ===== STEP 10: ArgoCD Sync ===== -->
+    <mxCell id="step10-box" value="🔟 ArgoCD Sync&#xa;────────────&#xa;• Apply Helm chart&#xa;• kubectl apply&#xa;• Rolling update&#xa;• Zero downtime&#xa;  deployment" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1A9C3E;strokeColor=#0E6B2A;fontColor=#FFFFFF;fontSize=10;fontStyle=0;align=left;verticalAlign=top;" vertex="1" parent="1">
+      <mxGeometry x="1055" y="120" width="130" height="120" as="geometry" />
+    </mxCell>
+
+    <!-- ===== STEP 11: Health Check ===== -->
+    <mxCell id="step11-box" value="1️⃣1️⃣ Health Check&#xa;────────────&#xa;• Readiness probe&#xa;  GET /health&#xa;• Liveness probe&#xa;• Wait for pods&#xa;  to be Ready" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1A9C3E;strokeColor=#0E6B2A;fontColor=#FFFFFF;fontSize=10;fontStyle=0;align=left;verticalAlign=top;" vertex="1" parent="1">
+      <mxGeometry x="905" y="450" width="130" height="120" as="geometry" />
+    </mxCell>
+
+    <!-- Deploy gate -->
+    <mxCell id="gate-health" value="Healthy?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#1A9C3E;strokeColor=#0E6B2A;fontColor=#FFFFFF;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+      <mxGeometry x="1060" y="360" width="100" height="70" as="geometry" />
+    </mxCell>
+    <mxCell id="gate-health-fail" value="🔄 Rollback&#xa;to prev version" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FF5555;strokeColor=#CC0000;fontColor=#FFFFFF;fontSize=9;" vertex="1" parent="1">
+      <mxGeometry x="1060" y="460" width="100" height="50" as="geometry" />
+    </mxCell>
+    <mxCell id="gate-health-fail-edge" value="No" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#FF5555;strokeWidth=2;fontStyle=1;fontSize=9;fontColor=#FF5555;" edge="1" source="gate-health" target="gate-health-fail" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+
+    <!-- ===== STEP 12: Running in EKS ===== -->
+    <mxCell id="step12-box" value="1️⃣2️⃣ Live in EKS&#xa;────────────&#xa;Namespace: llmops&#xa;• llm-gateway pod&#xa;Namespace: default&#xa;• demo-app pod&#xa;• HPA active" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ED7100;strokeColor=#B05500;fontColor=#FFFFFF;fontSize=10;fontStyle=0;align=left;verticalAlign=top;" vertex="1" parent="1">
+      <mxGeometry x="1225" y="120" width="130" height="130" as="geometry" />
+    </mxCell>
+
+    <!-- Services exposed -->
+    <mxCell id="svc-box" value="🌐 Exposed via&#xa;────────────&#xa;LoadBalancer SVC&#xa;• demo-app:3000&#xa;• llm-gateway:80&#xa;• grafana:80&#xa;• jenkins:8080" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ED7100;strokeColor=#B05500;fontColor=#FFFFFF;fontSize=10;fontStyle=0;align=left;verticalAlign=top;" vertex="1" parent="1">
+      <mxGeometry x="1225" y="300" width="130" height="120" as="geometry" />
+    </mxCell>
+
+    <!-- ===== STEP 13: Observability ===== -->
+    <mxCell id="step13-prom" value="📊 Prometheus&#xa;────────────&#xa;• Scrapes /metrics&#xa;  every 15s&#xa;• Stores time series&#xa;• Fires alerts" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#7AA116;strokeColor=#4A7000;fontColor=#FFFFFF;fontSize=10;fontStyle=0;align=left;verticalAlign=top;" vertex="1" parent="1">
+      <mxGeometry x="1405" y="120" width="130" height="110" as="geometry" />
+    </mxCell>
+
+    <mxCell id="step13-loki" value="📝 Loki&#xa;────────────&#xa;• Collects logs&#xa;  from all pods&#xa;• Promtail agent&#xa;• LogQL queries" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#7AA116;strokeColor=#4A7000;fontColor=#FFFFFF;fontSize=10;fontStyle=0;align=left;verticalAlign=top;" vertex="1" parent="1">
+      <mxGeometry x="1405" y="250" width="130" height="110" as="geometry" />
+    </mxCell>
+
+    <mxCell id="step13-tempo" value="🔍 Tempo&#xa;────────────&#xa;• Receives traces&#xa;  via OpenTelemetry&#xa;• Distributed&#xa;  request tracing" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#7AA116;strokeColor=#4A7000;fontColor=#FFFFFF;fontSize=10;fontStyle=0;align=left;verticalAlign=top;" vertex="1" parent="1">
+      <mxGeometry x="1405" y="380" width="130" height="110" as="geometry" />
+    </mxCell>
+
+    <mxCell id="step13-grafana" value="📈 Grafana&#xa;────────────&#xa;• Unified dashboards&#xa;• Alert rules&#xa;• Metrics + Logs&#xa;  + Traces in one UI" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#7AA116;strokeColor=#4A7000;fontColor=#FFFFFF;fontSize=10;fontStyle=0;align=left;verticalAlign=top;" vertex="1" parent="1">
+      <mxGeometry x="1405" y="510" width="130" height="110" as="geometry" />
+    </mxCell>
+
+    <!-- ===== LLM GATEWAY SPECIAL FLOW ===== -->
+    <mxCell id="llm-section-title" value="🤖 LLM GATEWAY — Special RAG Flow" style="text;html=1;strokeColor=#147EBA;fillColor=#E8F4FD;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=12;fontStyle=1;fontColor=#147EBA;" vertex="1" parent="1">
+      <mxGeometry x="30" y="700" width="1560" height="35" as="geometry" />
+    </mxCell>
+
+    <mxCell id="llm-user" value="User Request&#xa;POST /chat&#xa;{message: 'What is K8s?'}" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#147EBA;strokeColor=#0A5A8A;fontColor=#FFFFFF;fontSize=9;" vertex="1" parent="1">
+      <mxGeometry x="45" y="760" width="130" height="60" as="geometry" />
+    </mxCell>
+
+    <mxCell id="llm-auth" value="JWT Auth&#xa;Middleware&#xa;✓ Token valid?" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DD344C;strokeColor=#AA0022;fontColor=#FFFFFF;fontSize=9;" vertex="1" parent="1">
+      <mxGeometry x="225" y="760" width="130" height="60" as="geometry" />
+    </mxCell>
+
+    <mxCell id="llm-rate" value="Rate Limiter&#xa;10 req/min&#xa;per user" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DD344C;strokeColor=#AA0022;fontColor=#FFFFFF;fontSize=9;" vertex="1" parent="1">
+      <mxGeometry x="375" y="760" width="100" height="60" as="geometry" />
+    </mxCell>
+
+    <mxCell id="llm-guard" value="Guardrails&#xa;Block harmful&#xa;prompts" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DD344C;strokeColor=#AA0022;fontColor=#FFFFFF;fontSize=9;" vertex="1" parent="1">
+      <mxGeometry x="490" y="760" width="100" height="60" as="geometry" />
+    </mxCell>
+
+    <mxCell id="llm-rag" value="RAG Retriever&#xa;────────&#xa;1. Embed query&#xa;2. Search FAISS&#xa;3. Get top-3 docs" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#8C4FFF;strokeColor=#6A2FDD;fontColor=#FFFFFF;fontSize=9;" vertex="1" parent="1">
+      <mxGeometry x="610" y="750" width="120" height="80" as="geometry" />
+    </mxCell>
+
+    <mxCell id="llm-cache" value="Cache&#xa;Check&#xa;Redis" style="rhombus;whiteSpace=wrap;html=1;fillColor=#F5A30F;strokeColor=#C78000;fontColor=#FFFFFF;fontSize=9;" vertex="1" parent="1">
+      <mxGeometry x="755" y="755" width="80" height="70" as="geometry" />
+    </mxCell>
+
+    <mxCell id="llm-api" value="LLM API Call&#xa;────────&#xa;OpenAI/Ollama&#xa;+ Context docs&#xa;+ User question" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1A9C3E;strokeColor=#0E6B2A;fontColor=#FFFFFF;fontSize=9;" vertex="1" parent="1">
+      <mxGeometry x="870" y="750" width="120" height="80" as="geometry" />
+    </mxCell>
+
+    <mxCell id="llm-response" value="AI Response&#xa;+ Cache Store&#xa;+ Log metrics" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ED7100;strokeColor=#B05500;fontColor=#FFFFFF;fontSize=9;" vertex="1" parent="1">
+      <mxGeometry x="1020" y="760" width="120" height="60" as="geometry" />
+    </mxCell>
+
+    <mxCell id="llm-obs" value="Observability&#xa;• Prometheus counter&#xa;• Loki log entry&#xa;• Tempo trace span" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#7AA116;strokeColor=#4A7000;fontColor=#FFFFFF;fontSize=9;" vertex="1" parent="1">
+      <mxGeometry x="1170" y="750" width="130" height="80" as="geometry" />
+    </mxCell>
+
+    <mxCell id="llm-user-back" value="Response back&#xa;to User&#xa;{'answer': '...'}" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#147EBA;strokeColor=#0A5A8A;fontColor=#FFFFFF;fontSize=9;" vertex="1" parent="1">
+      <mxGeometry x="1330" y="760" width="120" height="60" as="geometry" />
+    </mxCell>
+
+    <!-- ===== ARROWS - Main Pipeline Flow ===== -->
+
+    <!-- Step 1 → Step 2 -->
+    <mxCell id="arr1" value="git push" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#232F3E;strokeWidth=2;fontStyle=1;fontSize=9;" edge="1" source="step1-box" target="step2-box" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+
+    <!-- Step 2 → Webhook -->
+    <mxCell id="arr2" value="merge to main" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#8C4FFF;strokeWidth=2;fontStyle=1;fontSize=9;fontColor=#8C4FFF;" edge="1" source="step2-box" target="step2b-box" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+
+    <!-- Webhook → Step 3 -->
+    <mxCell id="arr3" value="trigger" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#F5A30F;strokeWidth=2;fontStyle=1;fontSize=9;fontColor=#F5A30F;" edge="1" source="step2b-box" target="step3-box" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+
+    <!-- Step 3 → Step 4 -->
+    <mxCell id="arr4" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#F5A30F;strokeWidth=2;" edge="1" source="step3-box" target="step4-box" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+
+    <!-- Step 4 → Gate -->
+    <mxCell id="arr5" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#F5A30F;strokeWidth=2;" edge="1" source="step4-box" target="gate-test" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+
+    <!-- Gate → Step 5 (yes) -->
+    <mxCell id="arr6" value="Yes ✅" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#1A9C3E;strokeWidth=2;fontStyle=1;fontSize=9;fontColor=#1A9C3E;" edge="1" source="gate-test" target="step5-box" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+
+    <!-- Step 5 → Step 6 -->
+    <mxCell id="arr7" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#F5A30F;strokeWidth=2;" edge="1" source="step5-box" target="step6-box" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+
+    <!-- Step 6 → Step 7 -->
+    <mxCell id="arr8" value="scan pass" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#C7131F;strokeWidth=2;fontStyle=1;fontSize=9;fontColor=#C7131F;" edge="1" source="step6-box" target="step7-box" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+
+    <!-- Step 7 → ECR Repos -->
+    <mxCell id="arr9" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#C7131F;strokeWidth=2;" edge="1" source="step7-box" target="ecr-repos" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+
+    <!-- Step 6 → Step 8 (Update Git) -->
+    <mxCell id="arr10" value="update&#xa;image tag" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#F5A30F;strokeWidth=2;fontStyle=1;fontSize=9;fontColor=#F5A30F;" edge="1" source="step6-box" target="step8-box" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+
+    <!-- Step 8 → GitHub (update tag) -->
+    <mxCell id="arr10b" value="git push" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#8C4FFF;strokeWidth=2;fontStyle=1;fontSize=9;fontColor=#8C4FFF;" edge="1" source="step8-box" target="step2-box" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+
+    <!-- Step 8 → ArgoCD detect -->
+    <mxCell id="arr11" value="new commit" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#1A9C3E;strokeWidth=2;fontStyle=1;fontSize=9;fontColor=#1A9C3E;" edge="1" source="step8-box" target="step9-box" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+
+    <!-- ArgoCD → Gate -->
+    <mxCell id="arr12" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#1A9C3E;strokeWidth=2;" edge="1" source="step9-box" target="gate-sync" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+
+    <!-- Gate → Step 10 -->
+    <mxCell id="arr13" value="Yes ✅" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#1A9C3E;strokeWidth=2;fontStyle=1;fontSize=9;fontColor=#1A9C3E;" edge="1" source="gate-sync" target="step10-box" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+
+    <!-- Step 10 → Health Gate -->
+    <mxCell id="arr14" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#1A9C3E;strokeWidth=2;" edge="1" source="step10-box" target="gate-health" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+
+    <!-- Step 10 → Step 11 -->
+    <mxCell id="arr14b" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#1A9C3E;strokeWidth=2;" edge="1" source="step10-box" target="step11-box" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+
+    <!-- Health Gate → Step 12 -->
+    <mxCell id="arr15" value="Healthy ✅" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#1A9C3E;strokeWidth=2;fontStyle=1;fontSize=9;fontColor=#1A9C3E;" edge="1" source="gate-health" target="step12-box" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+
+    <!-- Step 12 → Services -->
+    <mxCell id="arr16" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#ED7100;strokeWidth=2;" edge="1" source="step12-box" target="svc-box" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+
+    <!-- Services → Observability -->
+    <mxCell id="arr17" value="metrics" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#7AA116;strokeWidth=2;fontStyle=1;fontSize=9;fontColor=#7AA116;" edge="1" source="svc-box" target="step13-prom" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="arr18" value="logs" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#7AA116;strokeWidth=2;fontStyle=1;fontSize=9;fontColor=#7AA116;" edge="1" source="svc-box" target="step13-loki" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="arr19" value="traces" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#7AA116;strokeWidth=2;fontStyle=1;fontSize=9;fontColor=#7AA116;" edge="1" source="svc-box" target="step13-tempo" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+
+    <!-- Obs → Grafana -->
+    <mxCell id="arr20" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#7AA116;strokeWidth=2;dashed=1;" edge="1" source="step13-prom" target="step13-grafana" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="arr21" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#7AA116;strokeWidth=2;dashed=1;" edge="1" source="step13-loki" target="step13-grafana" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="arr22" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#7AA116;strokeWidth=2;dashed=1;" edge="1" source="step13-tempo" target="step13-grafana" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+
+    <!-- ECR → ArgoCD pull -->
+    <mxCell id="arr23" value="pull image" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#C7131F;strokeWidth=2;fontStyle=1;fontSize=9;fontColor=#C7131F;dashed=1;" edge="1" source="ecr-repos" target="step10-box" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+
+    <!-- LLM flow arrows -->
+    <mxCell id="llm-arr1" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#147EBA;strokeWidth=2;" edge="1" source="llm-user" target="llm-auth" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="llm-arr2" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#DD344C;strokeWidth=2;" edge="1" source="llm-auth" target="llm-rate" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="llm-arr3" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#DD344C;strokeWidth=2;" edge="1" source="llm-rate" target="llm-guard" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="llm-arr4" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#8C4FFF;strokeWidth=2;" edge="1" source="llm-guard" target="llm-rag" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="llm-arr5" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#F5A30F;strokeWidth=2;" edge="1" source="llm-rag" target="llm-cache" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="llm-arr6" value="cache miss" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#1A9C3E;strokeWidth=2;fontStyle=1;fontSize=9;fontColor=#1A9C3E;" edge="1" source="llm-cache" target="llm-api" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="llm-arr7" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#ED7100;strokeWidth=2;" edge="1" source="llm-api" target="llm-response" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="llm-arr8" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#7AA116;strokeWidth=2;" edge="1" source="llm-response" target="llm-obs" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="llm-arr9" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#147EBA;strokeWidth=2;" edge="1" source="llm-obs" target="llm-user-back" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+
+    <!-- ===== BOTTOM LEGEND ===== -->
+    <mxCell id="bottom-legend" value="Pipeline Status: ✅ Tests Pass → Build → Scan → Push ECR → Update Git → ArgoCD Sync → EKS Deploy → Health Check → Live 🎉 | ❌ Tests Fail / Health Bad → Notify Developer / Rollback" style="text;html=1;strokeColor=#232F3E;fillColor=#F5F5F5;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=11;fontStyle=1;fontColor=#232F3E;" vertex="1" parent="1">
+      <mxGeometry x="30" y="860" width="1560" height="40" as="geometry" />
+    </mxCell>
+
+  </root>
+</mxGraphModel>

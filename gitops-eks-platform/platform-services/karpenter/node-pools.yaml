@@ -1,0 +1,347 @@
+---
+# =============================================================================
+# KARPENTER NodePool + EC2NodeClass — Enterprise Node Provisioning Strategy
+# =============================================================================
+# Strategy:
+#   1. general-purpose pool  → t3/m5/m6i, Spot+OnDemand, for most workloads
+#   2. compute-optimized pool → c5/c6i, Spot+OnDemand, for CPU-heavy (Jenkins)
+#   3. memory-optimized pool  → r5/r6i, Spot+OnDemand, for LLM inference
+#   4. platform pool          → m5.large OnDemand only, for platform tools
+#                               (ArgoCD, Prometheus — must not be Spot)
+#
+# Cost optimization:
+#   - Spot instances save 60-90% vs On-Demand
+#   - Karpenter auto-consolidates underused nodes (fewer nodes = lower cost)
+#   - Spot interruption handled via SQS queue + graceful drain
+# =============================================================================
+
+###############################################################################
+# EC2NodeClass — Defines the AWS-specific configuration for all node pools
+###############################################################################
+apiVersion: karpenter.k8s.aws/v1beta1
+kind: EC2NodeClass
+metadata:
+  name: default
+  labels:
+    rbac.devops-portfolio.io/managed-by: "gitops"
+  annotations:
+    description: "Default EC2 configuration for all Karpenter node pools"
+spec:
+  # Amazon EKS-optimized AMI — auto selects latest patch
+  amiFamily: AL2   # Amazon Linux 2 (EKS optimized)
+
+  # Use the same subnets as your EKS worker nodes (private subnets)
+  subnetSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: "devops-portfolio-eks"
+        kubernetes.io/role/internal-elb: "1"   # Private subnets only
+
+  # Security groups — same as existing EKS nodes
+  securityGroupSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: "devops-portfolio-eks"
+
+  # IAM instance profile for EKS nodes
+  instanceProfile: "KarpenterNodeInstanceProfile-devops-portfolio-eks"
+
+  # User data for bootstrapping (EKS node registration)
+  userData: |
+    #!/bin/bash
+    /etc/eks/bootstrap.sh devops-portfolio-eks \
+      --container-runtime containerd \
+      --kubelet-extra-args '--max-pods=110'
+
+  # EBS root volume — encrypted, gp3 for performance
+  blockDeviceMappings:
+    - deviceName: /dev/xvda
+      ebs:
+        volumeSize: 50Gi
+        volumeType: gp3
+        iops: 3000
+        throughput: 125
+        encrypted: true     # Encrypt all node storage
+        deleteOnTermination: true
+
+  # Metadata service — IMDSv2 required (security best practice)
+  metadataOptions:
+    httpEndpoint: enabled
+    httpProtocolIPv6: disabled
+    httpPutResponseHopLimit: 1   # Prevent SSRF attacks
+    httpTokens: required         # IMDSv2 required
+
+  tags:
+    Environment: dev
+    ManagedBy: karpenter
+    Project: devops-portfolio
+
+---
+###############################################################################
+# NodePool 1: GENERAL PURPOSE — t3/m5/m6i — Spot+OnDemand mix
+# Use: demo-app, general workloads
+###############################################################################
+apiVersion: karpenter.sh/v1beta1
+kind: NodePool
+metadata:
+  name: general-purpose
+  labels:
+    rbac.devops-portfolio.io/managed-by: "gitops"
+  annotations:
+    description: "General purpose nodes for most workloads — 70% Spot / 30% OnDemand"
+spec:
+  template:
+    metadata:
+      labels:
+        node-pool: general-purpose
+        workload-type: general
+      annotations:
+        node.kubernetes.io/pool: "general-purpose"
+    spec:
+      nodeClassRef:
+        apiVersion: karpenter.k8s.aws/v1beta1
+        kind: EC2NodeClass
+        name: default
+
+      requirements:
+        # Architecture
+        - key: kubernetes.io/arch
+          operator: In
+          values: ["amd64"]
+        # Instance families: t3 (burstable), m5/m6i (general purpose)
+        - key: karpenter.k8s.aws/instance-family
+          operator: In
+          values: ["t3", "m5", "m6i", "m5a", "m6a"]
+        # Instance sizes — not too small, not too large
+        - key: karpenter.k8s.aws/instance-size
+          operator: In
+          values: ["medium", "large", "xlarge", "2xlarge"]
+        # Availability Zones — spread across both AZs
+        - key: topology.kubernetes.io/zone
+          operator: In
+          values: ["us-west-2a", "us-west-2b"]
+        # Capacity type: prefer Spot, fallback to OnDemand
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: ["spot", "on-demand"]
+
+      # Taints — none for general purpose (all workloads can land here)
+      taints: []
+
+      # Kubelet configuration
+      kubelet:
+        maxPods: 110
+        systemReserved:
+          cpu: "100m"
+          memory: "256Mi"
+        kubeReserved:
+          cpu: "100m"
+          memory: "256Mi"
+        evictionHard:
+          memory.available: "200Mi"
+          nodefs.available: "10%"
+
+  # Auto-consolidation: merge underused nodes to save money
+  disruption:
+    consolidationPolicy: WhenUnderutilized   # Remove underused nodes
+    consolidateAfter: 30s                    # Wait 30s before consolidating
+    expireAfter: 720h                        # Replace nodes after 30 days (fresh AMI)
+
+  # Cost control: max 10 nodes in this pool
+  limits:
+    cpu: "80"       # Max 80 vCPUs across all general nodes
+    memory: "320Gi" # Max 320Gi RAM
+
+  # Node weight: higher = preferred by scheduler
+  weight: 10
+
+---
+###############################################################################
+# NodePool 2: COMPUTE OPTIMIZED — c5/c6i — For Jenkins + CPU-intensive builds
+###############################################################################
+apiVersion: karpenter.sh/v1beta1
+kind: NodePool
+metadata:
+  name: compute-optimized
+  labels:
+    rbac.devops-portfolio.io/managed-by: "gitops"
+  annotations:
+    description: "Compute-optimized nodes for Jenkins CI builds and CPU-heavy tasks"
+spec:
+  template:
+    metadata:
+      labels:
+        node-pool: compute-optimized
+        workload-type: compute
+    spec:
+      nodeClassRef:
+        apiVersion: karpenter.k8s.aws/v1beta1
+        kind: EC2NodeClass
+        name: default
+
+      requirements:
+        - key: kubernetes.io/arch
+          operator: In
+          values: ["amd64"]
+        - key: karpenter.k8s.aws/instance-family
+          operator: In
+          values: ["c5", "c6i", "c5a", "c6a"]   # Compute optimized families
+        - key: karpenter.k8s.aws/instance-size
+          operator: In
+          values: ["large", "xlarge", "2xlarge", "4xlarge"]
+        - key: topology.kubernetes.io/zone
+          operator: In
+          values: ["us-west-2a", "us-west-2b"]
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: ["spot", "on-demand"]
+
+      # Taint: only Jenkins/CI workloads land here
+      taints:
+        - key: workload-type
+          value: compute
+          effect: NoSchedule
+
+      kubelet:
+        maxPods: 110
+        systemReserved:
+          cpu: "200m"
+          memory: "512Mi"
+
+  disruption:
+    consolidationPolicy: WhenUnderutilized
+    consolidateAfter: 60s     # Wait longer — Jenkins jobs might still running
+    expireAfter: 720h
+
+  limits:
+    cpu: "64"
+    memory: "128Gi"
+
+  weight: 5
+
+---
+###############################################################################
+# NodePool 3: MEMORY OPTIMIZED — r5/r6i — For LLM inference (large models)
+###############################################################################
+apiVersion: karpenter.sh/v1beta1
+kind: NodePool
+metadata:
+  name: memory-optimized
+  labels:
+    rbac.devops-portfolio.io/managed-by: "gitops"
+  annotations:
+    description: "Memory-optimized nodes for LLM inference workloads requiring large RAM"
+spec:
+  template:
+    metadata:
+      labels:
+        node-pool: memory-optimized
+        workload-type: llm
+    spec:
+      nodeClassRef:
+        apiVersion: karpenter.k8s.aws/v1beta1
+        kind: EC2NodeClass
+        name: default
+
+      requirements:
+        - key: kubernetes.io/arch
+          operator: In
+          values: ["amd64"]
+        - key: karpenter.k8s.aws/instance-family
+          operator: In
+          values: ["r5", "r6i", "r5a", "r6a"]   # Memory optimized families
+        - key: karpenter.k8s.aws/instance-size
+          operator: In
+          values: ["xlarge", "2xlarge", "4xlarge", "8xlarge"]
+        - key: topology.kubernetes.io/zone
+          operator: In
+          values: ["us-west-2a", "us-west-2b"]
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: ["spot", "on-demand"]
+
+      # Taint: only LLM workloads land here
+      taints:
+        - key: workload-type
+          value: llm
+          effect: NoSchedule
+
+      kubelet:
+        maxPods: 58    # Fewer pods — each LLM pod needs lots of RAM
+        systemReserved:
+          cpu: "200m"
+          memory: "1Gi"
+        evictionHard:
+          memory.available: "1Gi"  # Higher eviction threshold for LLM
+
+  disruption:
+    consolidationPolicy: WhenUnderutilized
+    consolidateAfter: 300s  # Wait 5 min — LLM requests take time
+    expireAfter: 720h
+
+  limits:
+    cpu: "64"
+    memory: "512Gi"   # Higher memory limit for LLM workloads
+
+  weight: 8
+
+---
+###############################################################################
+# NodePool 4: PLATFORM — m5.large OnDemand ONLY — For critical platform tools
+# (ArgoCD, Prometheus, Grafana — MUST NOT be on Spot = no interruptions)
+###############################################################################
+apiVersion: karpenter.sh/v1beta1
+kind: NodePool
+metadata:
+  name: platform
+  labels:
+    rbac.devops-portfolio.io/managed-by: "gitops"
+  annotations:
+    description: "OnDemand-only nodes for critical platform tools (ArgoCD, Prometheus). NO Spot."
+spec:
+  template:
+    metadata:
+      labels:
+        node-pool: platform
+        workload-type: platform
+    spec:
+      nodeClassRef:
+        apiVersion: karpenter.k8s.aws/v1beta1
+        kind: EC2NodeClass
+        name: default
+
+      requirements:
+        - key: kubernetes.io/arch
+          operator: In
+          values: ["amd64"]
+        - key: karpenter.k8s.aws/instance-family
+          operator: In
+          values: ["m5", "m6i"]
+        - key: karpenter.k8s.aws/instance-size
+          operator: In
+          values: ["large", "xlarge"]
+        - key: topology.kubernetes.io/zone
+          operator: In
+          values: ["us-west-2a", "us-west-2b"]
+        # CRITICAL: OnDemand ONLY — platform tools cannot be interrupted
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: ["on-demand"]   # NO Spot for platform services
+
+      # Taint: only platform tools land here
+      taints:
+        - key: workload-type
+          value: platform
+          effect: NoSchedule
+
+      kubelet:
+        maxPods: 110
+
+  disruption:
+    consolidationPolicy: WhenEmpty   # Only remove if completely empty
+    consolidateAfter: Never           # Never consolidate platform nodes
+    expireAfter: 2160h                # Replace after 90 days
+
+  limits:
+    cpu: "32"
+    memory: "128Gi"
+
+  weight: 20   # Highest weight — platform pods prefer these nodes
