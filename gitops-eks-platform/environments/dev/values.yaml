@@ -5,7 +5,7 @@ replicaCount: 2
 
 image:
   repository: 050451393596.dkr.ecr.us-west-2.amazonaws.com/demo-app
-  tag: "latest"          # Jenkins CI updates this on every build via GitOps
+  tag: "la"          # Jenkins CI updates this on every build via GitOps
   pullPolicy: Always
 
 service:
