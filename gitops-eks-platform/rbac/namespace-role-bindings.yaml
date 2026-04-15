@@ -1,0 +1,322 @@
+---
+# =============================================================================
+# NAMESPACE-LEVEL ROLE BINDINGS
+# =============================================================================
+# Each namespace gets its own team bindings following least-privilege:
+#   - developers → developer role (in their namespace only)
+#   - team leads  → namespace-admin role (in their namespace only)
+#
+# Namespaces:
+#   default     → demo-app team
+#   llmops      → LLM/AI team
+#   monitoring  → SRE/observability team
+#   jenkins     → CI/CD platform team
+#   argocd      → GitOps platform team
+# =============================================================================
+
+###############################################################################
+# NAMESPACE: default (demo-app)
+###############################################################################
+
+# Team leads get namespace-admin in default
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: demo-team-lead-admin
+  namespace: default
+  labels:
+    rbac.devops-portfolio.io/managed-by: "gitops"
+    rbac.devops-portfolio.io/team: "demo-app"
+  annotations:
+    description: "Demo-app team lead has full admin in default namespace"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: namespace-admin
+subjects:
+  - kind: Group
+    name: eks-demo-team-leads
+    apiGroup: rbac.authorization.k8s.io
+
+---
+# Developers get developer role in default
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: demo-developers
+  namespace: default
+  labels:
+    rbac.devops-portfolio.io/managed-by: "gitops"
+    rbac.devops-portfolio.io/team: "demo-app"
+  annotations:
+    description: "Demo-app developers can deploy/debug in default namespace"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: developer
+subjects:
+  - kind: Group
+    name: eks-demo-developers
+    apiGroup: rbac.authorization.k8s.io
+
+---
+# SRE get sre role in default
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: sre-in-default
+  namespace: default
+  labels:
+    rbac.devops-portfolio.io/managed-by: "gitops"
+    rbac.devops-portfolio.io/team: "sre"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: sre
+subjects:
+  - kind: Group
+    name: eks-sre-team
+    apiGroup: rbac.authorization.k8s.io
+
+---
+###############################################################################
+# NAMESPACE: llmops (LLM Gateway / AI team)
+###############################################################################
+
+# LLM team lead — full admin in llmops namespace
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: llm-team-lead-admin
+  namespace: llmops
+  labels:
+    rbac.devops-portfolio.io/managed-by: "gitops"
+    rbac.devops-portfolio.io/team: "llmops"
+  annotations:
+    description: "LLM/AI team lead has full admin in llmops namespace"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: namespace-admin
+subjects:
+  - kind: Group
+    name: eks-llmops-team-leads
+    apiGroup: rbac.authorization.k8s.io
+
+---
+# LLM developers — deploy & debug in llmops
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: llm-developers
+  namespace: llmops
+  labels:
+    rbac.devops-portfolio.io/managed-by: "gitops"
+    rbac.devops-portfolio.io/team: "llmops"
+  annotations:
+    description: "LLM/AI developers can deploy and debug in llmops namespace"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: developer
+subjects:
+  - kind: Group
+    name: eks-llmops-developers
+    apiGroup: rbac.authorization.k8s.io
+
+---
+# SRE in llmops — incident response
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: sre-in-llmops
+  namespace: llmops
+  labels:
+    rbac.devops-portfolio.io/managed-by: "gitops"
+    rbac.devops-portfolio.io/team: "sre"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: sre
+subjects:
+  - kind: Group
+    name: eks-sre-team
+    apiGroup: rbac.authorization.k8s.io
+
+---
+###############################################################################
+# NAMESPACE: monitoring (Prometheus, Grafana, Loki, Tempo)
+###############################################################################
+
+# SRE team leads are namespace-admins of monitoring
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: sre-monitoring-admin
+  namespace: monitoring
+  labels:
+    rbac.devops-portfolio.io/managed-by: "gitops"
+    rbac.devops-portfolio.io/team: "sre"
+  annotations:
+    description: "SRE team leads are full admins of monitoring namespace"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: namespace-admin
+subjects:
+  - kind: Group
+    name: eks-sre-team-leads
+    apiGroup: rbac.authorization.k8s.io
+
+---
+# All SRE engineers — developer access in monitoring (edit dashboards, etc.)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: sre-in-monitoring
+  namespace: monitoring
+  labels:
+    rbac.devops-portfolio.io/managed-by: "gitops"
+    rbac.devops-portfolio.io/team: "sre"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: developer
+subjects:
+  - kind: Group
+    name: eks-sre-team
+    apiGroup: rbac.authorization.k8s.io
+
+---
+# Developers get read-only in monitoring (view their app metrics)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: developers-readonly-monitoring
+  namespace: monitoring
+  labels:
+    rbac.devops-portfolio.io/managed-by: "gitops"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: readonly
+subjects:
+  - kind: Group
+    name: eks-demo-developers
+    apiGroup: rbac.authorization.k8s.io
+  - kind: Group
+    name: eks-llmops-developers
+    apiGroup: rbac.authorization.k8s.io
+
+---
+###############################################################################
+# NAMESPACE: jenkins (CI/CD)
+###############################################################################
+
+# Platform team leads — namespace-admin of jenkins
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: platform-jenkins-admin
+  namespace: jenkins
+  labels:
+    rbac.devops-portfolio.io/managed-by: "gitops"
+    rbac.devops-portfolio.io/team: "platform"
+  annotations:
+    description: "Platform team fully manages Jenkins in jenkins namespace"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: namespace-admin
+subjects:
+  - kind: Group
+    name: eks-platform-admins
+    apiGroup: rbac.authorization.k8s.io
+
+---
+# All developers — read-only in jenkins (view their pipeline runs)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: developers-readonly-jenkins
+  namespace: jenkins
+  labels:
+    rbac.devops-portfolio.io/managed-by: "gitops"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: readonly
+subjects:
+  - kind: Group
+    name: eks-demo-developers
+    apiGroup: rbac.authorization.k8s.io
+  - kind: Group
+    name: eks-llmops-developers
+    apiGroup: rbac.authorization.k8s.io
+
+---
+###############################################################################
+# NAMESPACE: argocd (GitOps)
+###############################################################################
+
+# Platform admins fully manage ArgoCD
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: platform-argocd-admin
+  namespace: argocd
+  labels:
+    rbac.devops-portfolio.io/managed-by: "gitops"
+    rbac.devops-portfolio.io/team: "platform"
+  annotations:
+    description: "Platform team fully manages ArgoCD namespace"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: namespace-admin
+subjects:
+  - kind: Group
+    name: eks-platform-admins
+    apiGroup: rbac.authorization.k8s.io
+
+---
+# SRE — developer in argocd (manage app sync, rollbacks)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: sre-in-argocd
+  namespace: argocd
+  labels:
+    rbac.devops-portfolio.io/managed-by: "gitops"
+    rbac.devops-portfolio.io/team: "sre"
+  annotations:
+    description: "SRE can manage ArgoCD applications (sync, rollback) during incidents"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: developer
+subjects:
+  - kind: Group
+    name: eks-sre-team
+    apiGroup: rbac.authorization.k8s.io
+
+---
+# Developers — read-only in argocd (view deployment status)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: developers-readonly-argocd
+  namespace: argocd
+  labels:
+    rbac.devops-portfolio.io/managed-by: "gitops"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: readonly
+subjects:
+  - kind: Group
+    name: eks-demo-developers
+    apiGroup: rbac.authorization.k8s.io
+  - kind: Group
+    name: eks-llmops-developers
+    apiGroup: rbac.authorization.k8s.io

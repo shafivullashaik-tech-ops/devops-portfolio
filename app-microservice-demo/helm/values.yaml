@@ -3,9 +3,9 @@
 replicaCount: 2
 
 image:
-  repository: YOUR_AWS_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/demo-app
+  repository: 050451393596.dkr.ecr.us-west-2.amazonaws.com/demo-app
   pullPolicy: IfNotPresent
-  tag: "latest"
+  tag: "1.0.0"   
 
 imagePullSecrets: []
 nameOverride: ""

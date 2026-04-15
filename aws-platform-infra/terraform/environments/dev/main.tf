@@ -93,9 +93,9 @@ module "eks" {
   node_groups = {
     general = {
       instance_types = ["t3.medium"]
-      desired_size   = 2
-      min_size       = 1
-      max_size       = 3
+      desired_size   = 3
+      min_size       = 2
+      max_size       = 5
       disk_size      = 30
       capacity_type  = "ON_DEMAND"
 
@@ -105,6 +105,9 @@ module "eks" {
       }
     }
   }
+
+  # EBS CSI Driver — pass IRSA role from IAM module for PVC provisioning
+  ebs_csi_driver_role_arn = module.iam.ebs_csi_driver_role_arn
 
   tags = local.common_tags
 }
@@ -175,7 +178,47 @@ module "iam" {
   # LLM Gateway IRSA — read secrets from AWS Secrets Manager
   create_llm_gateway_role = true
 
+  # Karpenter IRSA — provision EC2 nodes
+  create_karpenter_role = true
+
+  # Velero IRSA — backup to S3 + EBS snapshots
+  create_velero_role = true
+
   tags = local.common_tags
 }
 
-# Import block removed — node group already destroyed
+################################################################################
+# EKS Access Entries — Permanent aws-auth management via Terraform
+# NEVER manage aws-auth via GitOps/ArgoCD — it breaks node authentication
+################################################################################
+
+# Node group role — required for nodes to join cluster (auto-managed by EKS)
+# EKS automatically adds node group roles, but we explicitly declare for safety
+resource "aws_eks_access_entry" "node_group" {
+  cluster_name  = module.eks.cluster_name
+  principal_arn = module.eks.node_group_role_arn
+  type          = "EC2_LINUX"
+
+  tags = local.common_tags
+}
+
+# Admin user — shafi-terraform (break-glass cluster admin)
+resource "aws_eks_access_entry" "admin_user" {
+  cluster_name  = module.eks.cluster_name
+  principal_arn = "arn:aws:iam::050451393596:user/shafi-terraform"
+  type          = "STANDARD"
+
+  tags = local.common_tags
+}
+
+resource "aws_eks_access_policy_association" "admin_user" {
+  cluster_name  = module.eks.cluster_name
+  principal_arn = "arn:aws:iam::050451393596:user/shafi-terraform"
+  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+
+  access_scope {
+    type = "cluster"
+  }
+
+  depends_on = [aws_eks_access_entry.admin_user]
+}

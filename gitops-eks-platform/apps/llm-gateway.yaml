@@ -1,0 +1,48 @@
+# ArgoCD App-of-Apps entry for LLM Gateway
+# Enterprise pattern: KEDA ScaledObject manages HPA lifecycle
+# ArgoCD prune=true removes stale resources (HPA not in git → ArgoCD prunes it)
+# KEDA then creates its OWN HPA via ScaledObject
+
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: llm-gateway
+  namespace: argocd
+  labels:
+    team: platform
+    app: llm-gateway
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/shafivullashaik-tech-ops/devops-portfolio.git
+    targetRevision: feature/llmops-rag-gateway
+    path: llmops-rag-gateway/k8s
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: llmops
+
+  syncPolicy:
+    automated:
+      prune: true        # HPA not in git → ArgoCD prunes it → KEDA creates its own
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+    retry:
+      limit: 3
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+
+  ignoreDifferences:
+    # Ignore replica count — KEDA ScaledObject manages replicas
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas

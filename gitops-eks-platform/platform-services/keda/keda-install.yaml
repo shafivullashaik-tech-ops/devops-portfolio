@@ -1,0 +1,110 @@
+---
+# =============================================================================
+# KEDA — Kubernetes Event Driven Autoscaler
+# =============================================================================
+# KEDA scales pods based on EVENTS, not just CPU/memory like basic HPA.
+#
+# What KEDA can scale on:
+#   - Prometheus metrics (e.g. HTTP req/sec > 100 → scale up)
+#   - SQS queue depth (e.g. queue > 50 msgs → scale up)
+#   - Kafka consumer lag
+#   - Custom metrics from any source
+#   - HTTP request rate (KEDA HTTP Add-on)
+#   - Schedule (e.g. scale to 10 at 9am, down to 2 at 6pm)
+#
+# Why KEDA over HPA alone?
+#   HPA:  only scales on CPU/memory
+#   KEDA: scales on BUSINESS metrics (queue depth, req/sec, etc.)
+#         also supports scale-to-ZERO (pods = 0 when idle)
+# =============================================================================
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: keda
+  namespace: argocd
+  labels:
+    app.kubernetes.io/component: "autoscaling"
+    rbac.devops-portfolio.io/managed-by: "gitops"
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"  # Install before apps that use it
+spec:
+  project: default
+  source:
+    repoURL: https://kedacore.github.io/charts
+    chart: keda
+    targetRevision: "2.13.0"
+    helm:
+      values: |
+        replicaCount: 2                    # HA: 2 KEDA operator replicas
+
+        operator:
+          replicaCount: 2
+          affinity:
+            podAntiAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchLabels:
+                      app: keda-operator
+                  topologyKey: kubernetes.io/hostname  # Spread across nodes
+
+        metricsServer:
+          replicaCount: 2
+          affinity:
+            podAntiAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchLabels:
+                      app: keda-operator-metrics-apiserver
+                  topologyKey: kubernetes.io/hostname
+
+        webhooks:
+          replicaCount: 2
+
+        # Resource limits for KEDA operator
+        resources:
+          operator:
+            limits:
+              cpu: 500m
+              memory: 512Mi
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          metricServer:
+            limits:
+              cpu: 500m
+              memory: 512Mi
+            requests:
+              cpu: 100m
+              memory: 128Mi
+
+        # Pod disruption budget for KEDA itself
+        podDisruptionBudget:
+          operator:
+            minAvailable: 1
+          metricServer:
+            minAvailable: 1
+
+        # Prometheus metrics from KEDA
+        prometheus:
+          operator:
+            enabled: true
+            podMonitor:
+              enabled: true
+              namespace: monitoring
+          metricServer:
+            enabled: true
+            podMonitor:
+              enabled: true
+              namespace: monitoring
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: keda
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

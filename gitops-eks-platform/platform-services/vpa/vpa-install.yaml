@@ -1,0 +1,188 @@
+---
+# =============================================================================
+# VPA — Vertical Pod Autoscaler (Right-sizing Pods)
+# =============================================================================
+# KEDA/HPA = Horizontal scaling (add more pods)
+# VPA       = Vertical scaling (make each pod bigger/smaller)
+#
+# VPA solves the "guess the right resource request" problem:
+#   Without VPA: Developer sets cpu:100m, app actually needs 800m → throttled
+#   With VPA:    VPA watches, recommends/sets cpu:800m automatically
+#
+# VPA Modes:
+#   Off         → Only show recommendations, don't change anything (SAFE START)
+#   Initial     → Set resources when pod first starts, don't change later
+#   Recreate    → Update resources, restart pod if needed
+#   Auto        → Fully automatic (evicts + recreates pods to resize)
+#
+# Best practice: Start with "Off" mode, review recommendations, then enable
+# =============================================================================
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: vpa
+  namespace: argocd
+  labels:
+    app.kubernetes.io/component: "vertical-autoscaling"
+    rbac.devops-portfolio.io/managed-by: "gitops"
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: default
+  source:
+    repoURL: https://charts.fairwinds.com/stable
+    chart: vpa
+    targetRevision: "3.0.0"
+    helm:
+      values: |
+        # VPA Recommender — watches pod usage, generates recommendations
+        recommender:
+          replicaCount: 1
+          resources:
+            requests:
+              cpu: 50m
+              memory: 256Mi
+            limits:
+              cpu: 200m
+              memory: 512Mi
+          # How far back to look at metrics history
+          extraArgs:
+            memory-saver: "true"
+            recommendation-lower-bound-cpu-percentile: "0.5"
+            recommendation-upper-bound-cpu-percentile: "0.95"
+            recommendation-lower-bound-memory-percentile: "0.5"
+            recommendation-upper-bound-memory-percentile: "0.95"
+            # Min history required before making recommendations
+            cpu-histogram-decay-half-life: "24h"
+            memory-histogram-decay-half-life: "24h"
+
+        # VPA Updater — applies recommendations (evicts pods if needed)
+        updater:
+          replicaCount: 1
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+
+        # VPA Admission Controller — sets resources on new pods
+        admissionController:
+          replicaCount: 2
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+          # Generate TLS cert for webhook
+          generateCertificate: true
+          certValidityDuration: 8760h  # 1 year
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: vpa
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+
+---
+# =============================================================================
+# VPA Objects — Right-sizing recommendations for each app
+# =============================================================================
+# Start with updateMode: "Off" — get recommendations, review, then enable
+
+# VPA for LLM Gateway
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: llm-gateway-vpa
+  namespace: llmops
+  labels:
+    app: llm-gateway
+    rbac.devops-portfolio.io/managed-by: "gitops"
+  annotations:
+    description: >
+      VPA for LLM Gateway. Mode=Off means recommendations only.
+      Check: kubectl describe vpa llm-gateway-vpa -n llmops
+      Then change to Auto once you trust the recommendations.
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: llm-gateway
+  updatePolicy:
+    updateMode: "Off"    # SAFE: recommendations only, no auto-restart
+  resourcePolicy:
+    containerPolicies:
+      - containerName: llm-gateway
+        minAllowed:
+          cpu: "200m"
+          memory: "512Mi"
+        maxAllowed:
+          cpu: "4"
+          memory: "8Gi"
+        controlledResources: ["cpu", "memory"]
+        controlledValues: RequestsAndLimits
+
+---
+# VPA for Demo App
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: demo-app-vpa
+  namespace: default
+  labels:
+    app: demo-app
+    rbac.devops-portfolio.io/managed-by: "gitops"
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: demo-app
+  updatePolicy:
+    updateMode: "Off"
+  resourcePolicy:
+    containerPolicies:
+      - containerName: demo-app
+        minAllowed:
+          cpu: "50m"
+          memory: "64Mi"
+        maxAllowed:
+          cpu: "2"
+          memory: "2Gi"
+        controlledResources: ["cpu", "memory"]
+        controlledValues: RequestsAndLimits
+
+---
+# VPA for Prometheus (often under-resourced)
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: prometheus-vpa
+  namespace: monitoring
+  labels:
+    rbac.devops-portfolio.io/managed-by: "gitops"
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: StatefulSet
+    name: prometheus-kube-prometheus-stack-prometheus
+  updatePolicy:
+    updateMode: "Initial"   # Set on first start, don't disrupt running instance
+  resourcePolicy:
+    containerPolicies:
+      - containerName: prometheus
+        minAllowed:
+          cpu: "200m"
+          memory: "512Mi"
+        maxAllowed:
+          cpu: "4"
+          memory: "16Gi"
+        controlledResources: ["cpu", "memory"]

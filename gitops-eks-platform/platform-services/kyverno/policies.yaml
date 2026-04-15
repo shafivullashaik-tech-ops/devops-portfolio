@@ -1,0 +1,478 @@
+---
+# =============================================================================
+# KYVERNO POLICIES — Enterprise EKS Policy Enforcement
+# =============================================================================
+# Policy Types:
+#   VALIDATE  → Check pods meet standards. Reject if not.
+#   MUTATE    → Auto-fix pods before they start (add labels, defaults)
+#   GENERATE  → Create resources automatically (NetworkPolicy per namespace)
+#
+# Enforcement modes:
+#   enforce → Reject the resource if policy fails (HARD block)
+#   audit   → Allow but report violation (SOFT — for monitoring first)
+# =============================================================================
+
+###############################################################################
+# VALIDATE POLICY 1: Require Resource Limits on ALL containers
+# Enterprise reason: Without limits, one pod can starve the entire node
+###############################################################################
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-resource-limits
+  labels:
+    policy.kyverno.io/category: "resource-management"
+    rbac.devops-portfolio.io/managed-by: "gitops"
+  annotations:
+    policies.kyverno.io/title: "Require Resource Limits"
+    policies.kyverno.io/description: >
+      Every container MUST define CPU and memory limits.
+      Without limits, a runaway pod can OOM the entire node.
+    policies.kyverno.io/severity: high
+spec:
+  validationFailureAction: enforce   # HARD BLOCK — no limits = rejected
+  background: true                   # Also check existing pods
+  rules:
+    - name: require-limits-and-requests
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: ["default", "llmops", "jenkins"]
+      exclude:
+        any:
+          - resources:
+              namespaces: ["kube-system", "kyverno", "keda", "karpenter"]
+      validate:
+        message: "CPU and memory limits+requests MUST be set on all containers."
+        pattern:
+          spec:
+            containers:
+              - name: "*"
+                resources:
+                  limits:
+                    memory: "?*"
+                    cpu: "?*"
+                  requests:
+                    memory: "?*"
+                    cpu: "?*"
+
+---
+###############################################################################
+# VALIDATE POLICY 2: Disallow :latest image tag
+# Enterprise reason: latest is unpredictable. Must pin to specific version.
+###############################################################################
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-latest-tag
+  labels:
+    policy.kyverno.io/category: "image-security"
+    rbac.devops-portfolio.io/managed-by: "gitops"
+  annotations:
+    policies.kyverno.io/title: "Disallow Latest Tag"
+    policies.kyverno.io/description: >
+      Container images must not use :latest tag.
+      All images must be pinned to a specific version (e.g. app:v1.2.3).
+    policies.kyverno.io/severity: high
+spec:
+  validationFailureAction: enforce
+  background: true
+  rules:
+    - name: disallow-latest-tag
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: ["default", "llmops"]
+      validate:
+        message: "Image tag ':latest' is not allowed. Use a specific version tag."
+        foreach:
+          - list: "request.object.spec.containers"
+            deny:
+              conditions:
+                any:
+                  - key: "{{ element.image }}"
+                    operator: Equals
+                    value: "*:latest"
+                  - key: "{{ element.image }}"
+                    operator: NotContains
+                    value: ":"     # No tag at all is same as :latest
+
+---
+###############################################################################
+# VALIDATE POLICY 3: Disallow running as root
+# Enterprise reason: root in container = potential host escape
+###############################################################################
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-root-user
+  labels:
+    policy.kyverno.io/category: "security"
+    rbac.devops-portfolio.io/managed-by: "gitops"
+  annotations:
+    policies.kyverno.io/title: "Disallow Root User"
+    policies.kyverno.io/description: >
+      Containers must not run as root (UID 0).
+      Set securityContext.runAsNonRoot: true or runAsUser >= 1000.
+    policies.kyverno.io/severity: critical
+spec:
+  validationFailureAction: enforce
+  background: true
+  rules:
+    - name: check-runasnonroot
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: ["default", "llmops"]
+      validate:
+        message: "Containers must NOT run as root. Set runAsNonRoot: true."
+        anyPattern:
+          - spec:
+              securityContext:
+                runAsNonRoot: true
+          - spec:
+              containers:
+                - name: "*"
+                  securityContext:
+                    runAsNonRoot: true
+          - spec:
+              containers:
+                - name: "*"
+                  securityContext:
+                    runAsUser: ">=1000"
+
+---
+###############################################################################
+# VALIDATE POLICY 4: Require required labels on all Pods
+# Enterprise reason: without labels, cost allocation + monitoring breaks
+###############################################################################
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-pod-labels
+  labels:
+    policy.kyverno.io/category: "labeling"
+    rbac.devops-portfolio.io/managed-by: "gitops"
+  annotations:
+    policies.kyverno.io/title: "Require Pod Labels"
+    policies.kyverno.io/description: >
+      All pods must have required labels for cost allocation,
+      monitoring, and incident routing.
+    policies.kyverno.io/severity: medium
+spec:
+  validationFailureAction: enforce
+  background: true
+  rules:
+    - name: require-app-label
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: ["default", "llmops"]
+      validate:
+        message: >
+          Pod must have labels: app, app.kubernetes.io/version, team.
+          Example: app: my-service, app.kubernetes.io/version: v1.0.0, team: platform
+        pattern:
+          metadata:
+            labels:
+              app: "?*"
+              team: "?*"
+
+---
+###############################################################################
+# VALIDATE POLICY 5: Disallow privileged containers
+# Enterprise reason: privileged = full root on the node — never in production
+###############################################################################
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-privileged-containers
+  labels:
+    policy.kyverno.io/category: "security"
+    rbac.devops-portfolio.io/managed-by: "gitops"
+  annotations:
+    policies.kyverno.io/title: "Disallow Privileged Containers"
+    policies.kyverno.io/severity: critical
+spec:
+  validationFailureAction: enforce
+  background: true
+  rules:
+    - name: disallow-privileged
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: ["default", "llmops", "jenkins", "monitoring"]
+      validate:
+        message: "Privileged containers are NOT allowed. Remove privileged: true."
+        pattern:
+          spec:
+            containers:
+              - name: "*"
+                =(securityContext):
+                  =(privileged): "false"
+
+---
+###############################################################################
+# VALIDATE POLICY 6: Disallow hostPath volumes
+# Enterprise reason: hostPath can read/write sensitive node files
+###############################################################################
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-host-path
+  labels:
+    policy.kyverno.io/category: "security"
+    rbac.devops-portfolio.io/managed-by: "gitops"
+  annotations:
+    policies.kyverno.io/title: "Disallow HostPath Volumes"
+    policies.kyverno.io/severity: high
+spec:
+  validationFailureAction: enforce
+  background: true
+  rules:
+    - name: disallow-hostpath
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: ["default", "llmops"]
+      validate:
+        message: "HostPath volumes are not allowed. Use PVC or emptyDir instead."
+        deny:
+          conditions:
+            any:
+              - key: "{{ request.object.spec.volumes[].hostPath | length(@) }}"
+                operator: GreaterThan
+                value: 0
+
+---
+###############################################################################
+# VALIDATE POLICY 7: Require liveness and readiness probes
+# Enterprise reason: without probes, bad pods receive traffic / never restart
+###############################################################################
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-probes
+  labels:
+    policy.kyverno.io/category: "reliability"
+    rbac.devops-portfolio.io/managed-by: "gitops"
+  annotations:
+    policies.kyverno.io/title: "Require Liveness and Readiness Probes"
+    policies.kyverno.io/severity: medium
+spec:
+  validationFailureAction: audit   # audit first — many existing pods may not have this
+  background: true
+  rules:
+    - name: require-readiness-probe
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: ["default", "llmops"]
+      validate:
+        message: "All containers must define readinessProbe and livenessProbe."
+        pattern:
+          spec:
+            containers:
+              - name: "*"
+                readinessProbe:
+                  httpGet:
+                    path: "?*"
+                    port: "?*"
+                livenessProbe:
+                  httpGet:
+                    path: "?*"
+                    port: "?*"
+
+---
+###############################################################################
+# MUTATE POLICY 1: Auto-add standard labels to all Pods
+# Enterprise reason: ensure every pod is discoverable for billing/monitoring
+###############################################################################
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: auto-add-labels
+  labels:
+    policy.kyverno.io/category: "labeling"
+    rbac.devops-portfolio.io/managed-by: "gitops"
+  annotations:
+    policies.kyverno.io/title: "Auto-add Standard Labels"
+    policies.kyverno.io/description: >
+      Automatically adds cluster, environment, and managed-by labels
+      to every pod that doesn't already have them.
+spec:
+  rules:
+    - name: add-cluster-labels
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: ["default", "llmops", "monitoring"]
+      mutate:
+        patchStrategicMerge:
+          metadata:
+            labels:
+              +(cluster): "devops-portfolio-eks"         # Add if not present
+              +(environment): "dev"                      # Add if not present
+              +(managed-by): "gitops"                    # Add if not present
+
+---
+###############################################################################
+# MUTATE POLICY 2: Auto-add securityContext defaults
+# Enterprise reason: ensure all pods have safe security defaults
+###############################################################################
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: auto-add-security-context
+  labels:
+    policy.kyverno.io/category: "security"
+    rbac.devops-portfolio.io/managed-by: "gitops"
+  annotations:
+    policies.kyverno.io/title: "Auto-inject Security Context Defaults"
+    policies.kyverno.io/description: >
+      Automatically adds safe security context defaults to pods:
+      readOnlyRootFilesystem, allowPrivilegeEscalation:false
+spec:
+  rules:
+    - name: add-security-context
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: ["default", "llmops"]
+      mutate:
+        patchStrategicMerge:
+          spec:
+            containers:
+              - (name): "*"
+                securityContext:
+                  +(allowPrivilegeEscalation): false      # Add if not present
+                  +(readOnlyRootFilesystem): false        # Add if not present (false = don't break apps)
+                  +(runAsNonRoot): true                   # Add if not present
+
+---
+###############################################################################
+# GENERATE POLICY: Auto-create NetworkPolicy for every new namespace
+# Enterprise reason: by default ALL pods can talk to ALL pods — must isolate
+###############################################################################
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: auto-create-network-policy
+  labels:
+    policy.kyverno.io/category: "network-security"
+    rbac.devops-portfolio.io/managed-by: "gitops"
+  annotations:
+    policies.kyverno.io/title: "Auto-create Default Deny NetworkPolicy"
+    policies.kyverno.io/description: >
+      When a new namespace is created, automatically create a default-deny
+      NetworkPolicy. Teams must explicitly allow traffic they need.
+      This implements zero-trust networking.
+spec:
+  rules:
+    - name: generate-default-deny-network-policy
+      match:
+        any:
+          - resources:
+              kinds: [Namespace]
+      exclude:
+        any:
+          - resources:
+              names:
+                - kube-system
+                - kube-public
+                - kyverno
+                - keda
+                - karpenter
+      generate:
+        apiVersion: networking.k8s.io/v1
+        kind: NetworkPolicy
+        name: default-deny-all
+        namespace: "{{request.object.metadata.name}}"
+        synchronize: true    # Keep in sync — delete namespace = delete policy
+        data:
+          metadata:
+            labels:
+              policy.kyverno.io/generated: "true"
+          spec:
+            podSelector: {}    # Applies to ALL pods in namespace
+            policyTypes:
+              - Ingress
+              - Egress
+            # No ingress/egress rules = DEFAULT DENY ALL
+            # Teams must add their own NetworkPolicies to allow specific traffic
+
+---
+###############################################################################
+# GENERATE POLICY 2: Allow DNS + same-namespace traffic for new namespaces
+# Enterprise reason: apps need DNS to resolve service names
+###############################################################################
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: auto-allow-dns-and-same-ns
+  labels:
+    policy.kyverno.io/category: "network-security"
+    rbac.devops-portfolio.io/managed-by: "gitops"
+  annotations:
+    policies.kyverno.io/title: "Auto-allow DNS and Same-namespace Traffic"
+spec:
+  rules:
+    - name: allow-dns-egress
+      match:
+        any:
+          - resources:
+              kinds: [Namespace]
+      exclude:
+        any:
+          - resources:
+              names: ["kube-system", "kube-public", "kyverno", "keda", "karpenter"]
+      generate:
+        apiVersion: networking.k8s.io/v1
+        kind: NetworkPolicy
+        name: allow-dns-and-same-namespace
+        namespace: "{{request.object.metadata.name}}"
+        synchronize: true
+        data:
+          metadata:
+            labels:
+              policy.kyverno.io/generated: "true"
+          spec:
+            podSelector: {}
+            policyTypes:
+              - Ingress
+              - Egress
+            ingress:
+              # Allow traffic from same namespace
+              - from:
+                  - podSelector: {}
+            egress:
+              # Allow DNS resolution (kube-dns)
+              - to:
+                  - namespaceSelector:
+                      matchLabels:
+                        kubernetes.io/metadata.name: kube-system
+                    podSelector:
+                      matchLabels:
+                        k8s-app: kube-dns
+                ports:
+                  - port: 53
+                    protocol: UDP
+                  - port: 53
+                    protocol: TCP
+              # Allow traffic within same namespace
+              - to:
+                  - podSelector: {}
+              # Allow egress to monitoring namespace (metrics push)
+              - to:
+                  - namespaceSelector:
+                      matchLabels:
+                        kubernetes.io/metadata.name: monitoring

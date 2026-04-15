@@ -1,0 +1,141 @@
+---
+# Kyverno — Policy Engine (installs directly from Helm chart repo)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kyverno
+  namespace: argocd
+  finalizers: [resources-finalizer.argocd.argoproj.io]
+  labels:
+    app.kubernetes.io/component: "policy"
+spec:
+  project: default
+  source:
+    repoURL: https://kyverno.github.io/kyverno
+    chart: kyverno
+    targetRevision: "3.1.0"
+    helm:
+      values: |
+        admissionController:
+          replicas: 1
+        backgroundController:
+          replicas: 1
+        cleanupController:
+          replicas: 1
+        reportsController:
+          replicas: 1
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kyverno
+  syncPolicy:
+    automated: {prune: true, selfHeal: true}
+    syncOptions: [CreateNamespace=true, ServerSideApply=true]
+  ignoreDifferences:
+    - group: admissionregistration.k8s.io
+      kind: MutatingWebhookConfiguration
+      jsonPointers: [/webhooks]
+    - group: admissionregistration.k8s.io
+      kind: ValidatingWebhookConfiguration
+      jsonPointers: [/webhooks]
+
+---
+# External Secrets Operator (installs from Helm chart repo)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: external-secrets
+  namespace: argocd
+  finalizers: [resources-finalizer.argocd.argoproj.io]
+  labels:
+    app.kubernetes.io/component: "secret-management"
+spec:
+  project: default
+  source:
+    repoURL: https://charts.external-secrets.io
+    chart: external-secrets
+    targetRevision: "0.9.13"
+    helm:
+      values: |
+        replicaCount: 1
+        serviceAccount:
+          annotations:
+            eks.amazonaws.com/role-arn: "arn:aws:iam::050451393596:role/external-secrets-irsa-role"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: external-secrets
+  syncPolicy:
+    automated: {prune: true, selfHeal: true}
+    syncOptions: [CreateNamespace=true, ServerSideApply=true]
+
+---
+# cert-manager — TLS Certificate Automation (installs from Helm chart repo)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cert-manager
+  namespace: argocd
+  finalizers: [resources-finalizer.argocd.argoproj.io]
+  labels:
+    app.kubernetes.io/component: "certificate-management"
+spec:
+  project: default
+  source:
+    repoURL: https://charts.jetstack.io
+    chart: cert-manager
+    targetRevision: "v1.14.0"
+    helm:
+      values: |
+        installCRDs: true
+        replicaCount: 1
+        serviceAccount:
+          annotations:
+            eks.amazonaws.com/role-arn: "arn:aws:iam::050451393596:role/cert-manager-irsa-role"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: cert-manager
+  syncPolicy:
+    automated: {prune: true, selfHeal: true}
+    syncOptions: [CreateNamespace=true, ServerSideApply=true]
+
+---
+# Falco — Runtime Security (installs from Helm chart repo)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: falco
+  namespace: argocd
+  finalizers: [resources-finalizer.argocd.argoproj.io]
+  labels:
+    app.kubernetes.io/component: "runtime-security"
+spec:
+  project: default
+  source:
+    repoURL: https://falcosecurity.github.io/charts
+    chart: falco
+    targetRevision: "4.0.0"
+    helm:
+      values: |
+        driver:
+          kind: modern_ebpf   # Use modern_ebpf for EKS (ebpf has compat issues)
+        falco:
+          json_output: true
+          priority: warning
+        falcosidekick:
+          enabled: true
+          replicaCount: 1
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        tolerations:
+          - effect: NoSchedule
+            operator: Exists
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: falco
+  syncPolicy:
+    automated: {prune: true, selfHeal: true}
+    syncOptions: [CreateNamespace=true]

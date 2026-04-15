@@ -185,3 +185,171 @@ resource "aws_iam_role_policy" "llm_gateway_secrets" {
     ]
   })
 }
+
+################################################################################
+# Karpenter IRSA — allows Karpenter to provision EC2 nodes
+################################################################################
+
+resource "aws_iam_role" "karpenter_irsa" {
+  count = var.create_karpenter_role ? 1 : 0
+  name  = "${var.cluster_name}-karpenter-irsa"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Principal = {
+        Federated = var.oidc_provider_arn
+      }
+      Action = "sts:AssumeRoleWithWebIdentity"
+      Condition = {
+        StringEquals = {
+          "${replace(var.oidc_provider_arn, "/^(.*provider/)/", "")}:sub" = "system:serviceaccount:karpenter:karpenter"
+          "${replace(var.oidc_provider_arn, "/^(.*provider/)/", "")}:aud" = "sts.amazonaws.com"
+        }
+      }
+    }]
+  })
+
+  tags = var.tags
+}
+
+resource "aws_iam_role_policy" "karpenter_controller" {
+  count = var.create_karpenter_role ? 1 : 0
+  name  = "${var.cluster_name}-karpenter-controller-policy"
+  role  = aws_iam_role.karpenter_irsa[0].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "Karpenter"
+        Effect = "Allow"
+        Action = [
+          "ssm:GetParameter",
+          "ec2:DescribeImages",
+          "ec2:RunInstances",
+          "ec2:DescribeLaunchTemplates",
+          "ec2:DescribeInstances",
+          "ec2:DescribeSecurityGroups",
+          "ec2:DescribeSubnets",
+          "ec2:DescribeInstanceTypes",
+          "ec2:DescribeInstanceTypeOfferings",
+          "ec2:DescribeAvailabilityZones",
+          "ec2:DeleteLaunchTemplate",
+          "ec2:CreateTags",
+          "ec2:CreateLaunchTemplate",
+          "ec2:CreateFleet",
+          "ec2:DescribeSpotPriceHistory",
+          "pricing:GetProducts",
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "ConditionalEC2Termination"
+        Effect = "Allow"
+        Action = "ec2:TerminateInstances"
+        Resource = "*"
+        Condition = {
+          StringLike = {
+            "ec2:ResourceTag/karpenter.sh/provisioner-name" = "*"
+          }
+        }
+      },
+      {
+        Sid    = "PassNodeIAMRole"
+        Effect = "Allow"
+        Action = "iam:PassRole"
+        Resource = "arn:${data.aws_partition.current.partition}:iam::*:role/${var.cluster_name}-eks-node-group-role"
+      },
+      {
+        Sid    = "EKSClusterEndpointLookup"
+        Effect = "Allow"
+        Action = "eks:DescribeCluster"
+        Resource = var.eks_cluster_arn
+      },
+      {
+        Sid    = "SQSInterruption"
+        Effect = "Allow"
+        Action = [
+          "sqs:DeleteMessage",
+          "sqs:GetQueueAttributes",
+          "sqs:GetQueueUrl",
+          "sqs:ReceiveMessage",
+        ]
+        Resource = "*"
+      },
+    ]
+  })
+}
+
+################################################################################
+# Velero IRSA — allows Velero to backup to S3
+################################################################################
+
+resource "aws_iam_role" "velero_irsa" {
+  count = var.create_velero_role ? 1 : 0
+  name  = "${var.cluster_name}-velero-irsa"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Principal = {
+        Federated = var.oidc_provider_arn
+      }
+      Action = "sts:AssumeRoleWithWebIdentity"
+      Condition = {
+        StringEquals = {
+          "${replace(var.oidc_provider_arn, "/^(.*provider/)/", "")}:sub" = "system:serviceaccount:velero:velero-server"
+          "${replace(var.oidc_provider_arn, "/^(.*provider/)/", "")}:aud" = "sts.amazonaws.com"
+        }
+      }
+    }]
+  })
+
+  tags = var.tags
+}
+
+resource "aws_iam_role_policy" "velero_backup" {
+  count = var.create_velero_role ? 1 : 0
+  name  = "${var.cluster_name}-velero-backup-policy"
+  role  = aws_iam_role.velero_irsa[0].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "VeleroS3"
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject",
+          "s3:DeleteObject",
+          "s3:PutObject",
+          "s3:AbortMultipartUpload",
+          "s3:ListMultipartUploadParts",
+          "s3:ListBucket",
+          "s3:GetBucketVersioning",
+          "s3:GetBucketLocation",
+        ]
+        Resource = [
+          "arn:aws:s3:::devops-portfolio-velero-backups",
+          "arn:aws:s3:::devops-portfolio-velero-backups/*",
+        ]
+      },
+      {
+        Sid    = "VeleroEC2Snapshots"
+        Effect = "Allow"
+        Action = [
+          "ec2:DescribeVolumes",
+          "ec2:DescribeSnapshots",
+          "ec2:CreateTags",
+          "ec2:CreateVolume",
+          "ec2:CreateSnapshot",
+          "ec2:DeleteSnapshot",
+        ]
+        Resource = "*"
+      },
+    ]
+  })
+}
